@@ -11,6 +11,7 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.74.0",
     "@google/genai": "^1.40.0",
     "@gradio/client": "^2.0.4",
     "@hookform/resolvers": "^3.10.0",
