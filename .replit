@@ -39,4 +39,4 @@ externalPort = 80
 
 [userenv.shared]
 API_BEARER_TOKEN = "sk-soundseed-2026"
-RUNPOD_POD_ID = "u14mq2xwa3ocdx"
+RUNPOD_POD_ID = "oqxrp4tnofndmw"
