@@ -148,7 +148,7 @@ export async function registerRoutes(
     res.json(job);
   });
 
-  app.get("/api/jobs/:id/audio", requireBearerAuth, async (req, res) => {
+  app.get("/api/jobs/:id/audio", async (req, res) => {
     const job = await storage.getJob(req.params.id);
     if (!job || job.status !== "COMPLETED" || !job.outputUrl) {
       return res.status(404).json({ error: "Audio not available" });
