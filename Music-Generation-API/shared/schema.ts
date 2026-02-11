@@ -37,7 +37,7 @@ export const createJobSchema = z.object({
   engine: z.string().default("ace-step"),
   prompt: z.string().min(1, "Prompt is required"),
   lyrics: z.string().optional(),
-  duration: z.number().min(10).max(600).default(30),
+  duration: z.number().min(1).max(600).default(30),
   style: z.string().optional(),
   instrument: z.string().optional(),
   tags: z.string().optional(),
