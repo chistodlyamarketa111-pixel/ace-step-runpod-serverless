@@ -11,7 +11,12 @@ const ENGINE_CONFIGS = {
   "ace-step": {
     name: "ace-step-music-gen",
     imageName: "valyriantech/ace-step-1.5:latest",
-    gpuTypeIds: ["NVIDIA L40S", "NVIDIA RTX A6000", "NVIDIA A100 80GB PCIe", "NVIDIA A100-SXM4-80GB"],
+    gpuTypeIds: [
+      "NVIDIA L40S",
+      "NVIDIA RTX A6000",
+      "NVIDIA A100 80GB PCIe",
+      "NVIDIA A100-SXM4-80GB",
+    ],
     containerDiskInGb: 100,
     envVar: "RUNPOD_POD_ID",
     searchTerms: ["ace-step-music-gen", "ace-step"],
@@ -20,7 +25,12 @@ const ENGINE_CONFIGS = {
   heartmula: {
     name: "heartmula-music-gen",
     imageName: "ambsd/heartmula-studio:latest",
-    gpuTypeIds: ["NVIDIA L40S", "NVIDIA RTX A6000", "NVIDIA A100 80GB PCIe", "NVIDIA A100-SXM4-80GB"],
+    gpuTypeIds: [
+      "NVIDIA L40S",
+      "NVIDIA RTX A6000",
+      "NVIDIA A100 80GB PCIe",
+      "NVIDIA A100-SXM4-80GB",
+    ],
     containerDiskInGb: 100,
     envVar: "HEARTMULA_POD_ID",
     searchTerms: ["heartmula-music-gen", "heartmula"],
@@ -29,7 +39,12 @@ const ENGINE_CONFIGS = {
   yue: {
     name: "yue-music-gen",
     imageName: "alissonpereiraanjos/yue-interface:latest",
-    gpuTypeIds: ["NVIDIA L40S", "NVIDIA RTX A6000", "NVIDIA A100 80GB PCIe", "NVIDIA A100-SXM4-80GB"],
+    gpuTypeIds: [
+      "NVIDIA L40S",
+      "NVIDIA RTX A6000",
+      "NVIDIA A100 80GB PCIe",
+      "NVIDIA A100-SXM4-80GB",
+    ],
     containerDiskInGb: 100,
     envVar: "YUE_POD_ID",
     searchTerms: ["yue-music-gen", "yue"],
@@ -71,7 +86,10 @@ async function createPod(engine: EngineName): Promise<any> {
     env: engine === "yue" ? { DOWNLOAD_MODELS: "all" } : {},
   };
 
-  console.log(`Creating ${engine} pod with config:`, JSON.stringify(payload, null, 2));
+  console.log(
+    `Creating ${engine} pod with config:`,
+    JSON.stringify(payload, null, 2),
+  );
 
   const res = await fetch(`${BASE_URL}/pods`, {
     method: "POST",
@@ -107,7 +125,9 @@ async function waitForPod(podId: string, maxWaitMs = 300000): Promise<any> {
 
   while (Date.now() - start < maxWaitMs) {
     const pod = await getPod(podId);
-    console.log(`  Status: ${pod.desiredStatus} | Runtime: ${pod.runtime?.uptimeInSeconds || 0}s`);
+    console.log(
+      `  Status: ${pod.desiredStatus} | Runtime: ${pod.runtime?.uptimeInSeconds || 0}s`,
+    );
 
     if (pod.runtime && pod.runtime.uptimeInSeconds > 0) {
       return pod;
@@ -119,7 +139,11 @@ async function waitForPod(podId: string, maxWaitMs = 300000): Promise<any> {
   throw new Error("Timed out waiting for pod to start");
 }
 
-async function waitForApiReady(podId: string, engine: EngineName, maxWaitMs = 180000): Promise<boolean> {
+async function waitForApiReady(
+  podId: string,
+  engine: EngineName,
+  maxWaitMs = 180000,
+): Promise<boolean> {
   const port = engine === "yue" ? "7860" : "8000";
   const baseUrl = `https://${podId}-${port}.proxy.runpod.net`;
   const start = Date.now();
@@ -128,13 +152,17 @@ async function waitForApiReady(podId: string, engine: EngineName, maxWaitMs = 18
   while (Date.now() - start < maxWaitMs) {
     try {
       if (engine === "yue") {
-        const res = await fetch(`${baseUrl}/`, { signal: AbortSignal.timeout(10000) });
+        const res = await fetch(`${baseUrl}/`, {
+          signal: AbortSignal.timeout(10000),
+        });
         if (res.ok) {
           console.log("  Gradio API is ready!");
           return true;
         }
       } else {
-        const res = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(5000) });
+        const res = await fetch(`${baseUrl}/health`, {
+          signal: AbortSignal.timeout(5000),
+        });
         if (res.ok) {
           const data = await res.json();
           if (data.status === "ok") {
@@ -155,10 +183,14 @@ async function waitForApiReady(podId: string, engine: EngineName, maxWaitMs = 18
 async function enforceGpuOnlySettings(podId: string): Promise<void> {
   const baseUrl = `https://${podId}-8000.proxy.runpod.net`;
 
-  console.log("\n=== ENFORCING GPU-ONLY SETTINGS (CPU fallback is NEVER acceptable) ===");
+  console.log(
+    "\n=== ENFORCING GPU-ONLY SETTINGS (CPU fallback is NEVER acceptable) ===",
+  );
 
   try {
-    const currentRes = await fetch(`${baseUrl}/settings/gpu`, { signal: AbortSignal.timeout(10000) });
+    const currentRes = await fetch(`${baseUrl}/settings/gpu`, {
+      signal: AbortSignal.timeout(10000),
+    });
     if (!currentRes.ok) {
       console.error(`  Failed to read GPU settings: HTTP ${currentRes.status}`);
       return;
@@ -168,7 +200,8 @@ async function enforceGpuOnlySettings(podId: string): Promise<void> {
 
     const needsUpdate =
       current.quantization_4bit !== HEARTMULA_GPU_SETTINGS.quantization_4bit ||
-      current.sequential_offload !== HEARTMULA_GPU_SETTINGS.sequential_offload ||
+      current.sequential_offload !==
+        HEARTMULA_GPU_SETTINGS.sequential_offload ||
       current.torch_compile !== HEARTMULA_GPU_SETTINGS.torch_compile;
 
     if (!needsUpdate) {
@@ -195,7 +228,9 @@ async function enforceGpuOnlySettings(podId: string): Promise<void> {
     console.log("  GPU-ONLY mode is now active. CPU fallback disabled.");
   } catch (e: any) {
     console.error(`  Error enforcing GPU settings: ${e.message}`);
-    console.error("  IMPORTANT: Manually enforce GPU settings after pod is fully ready!");
+    console.error(
+      "  IMPORTANT: Manually enforce GPU settings after pod is fully ready!",
+    );
   }
 }
 
@@ -215,7 +250,8 @@ async function main() {
   const existingPod = existingPods.find(
     (p: any) =>
       config.searchTerms.some((term) => p.name === term) ||
-      (p.imageName && config.searchTerms.some((term) => p.imageName.includes(term)))
+      (p.imageName &&
+        config.searchTerms.some((term) => p.imageName.includes(term))),
   );
 
   if (existingPod) {
@@ -223,7 +259,9 @@ async function main() {
     console.log(`  Name: ${existingPod.name}`);
     console.log(`  Status: ${existingPod.desiredStatus}`);
     console.log(`  GPU: ${existingPod.machine?.gpuDisplayName || "N/A"}`);
-    console.log(`\nPod API URL: https://${existingPod.id}-8000.proxy.runpod.net`);
+    console.log(
+      `\nPod API URL: https://${existingPod.id}-8000.proxy.runpod.net`,
+    );
     console.log(`\nSet this as ${config.envVar}: ${existingPod.id}`);
 
     if (engine === "heartmula") {
@@ -254,28 +292,38 @@ async function main() {
   console.log(`  ${config.envVar} = ${readyPod.id}`);
 
   if (engine === "heartmula") {
-    console.log("\nWaiting for HeartMuLa API to load model (may take a few minutes)...");
+    console.log(
+      "\nWaiting for HeartMuLa API to load model (may take a few minutes)...",
+    );
     const apiReady = await waitForApiReady(readyPod.id, engine);
     if (apiReady) {
       await enforceGpuOnlySettings(readyPod.id);
     } else {
       console.log("\nWARNING: Could not auto-enforce GPU settings.");
-      console.log("After the API is ready, run: curl -X POST <app-url>/api/heartmula/enforce-gpu");
+      console.log(
+        "After the API is ready, run: curl -X POST <app-url>/api/heartmula/enforce-gpu",
+      );
     }
   }
 
   if (engine === "yue") {
-    console.log("\nWaiting for YuE Gradio API to load models (this can take 5-10 minutes)...");
+    console.log(
+      "\nWaiting for YuE Gradio API to load models (this can take 5-10 minutes)...",
+    );
     const apiReady = await waitForApiReady(readyPod.id, engine, 600000);
     if (apiReady) {
       console.log("  YuE Gradio interface is ready!");
     } else {
-      console.log("\nWARNING: YuE API did not become ready within timeout. Model may still be downloading.");
+      console.log(
+        "\nWARNING: YuE API did not become ready within timeout. Model may still be downloading.",
+      );
     }
   }
 
   const port = engine === "yue" ? "7860" : "8000";
-  console.log(`\nThe model may need additional time to load after the pod starts.`);
+  console.log(
+    `\nThe model may need additional time to load after the pod starts.`,
+  );
   console.log(`Check at: https://${readyPod.id}-${port}.proxy.runpod.net/`);
 }
 

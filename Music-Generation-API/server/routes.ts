@@ -53,9 +53,7 @@ export async function registerRoutes(
       }
 
       if (!musicEngine.isConfigured()) {
-        return res
-          .status(503)
-          .json({ error: `Engine ${engineId} not configured` });
+        return res.status(503).json({ error: `Engine ${engineId} not configured` });
       }
 
       const job = await storage.createJob({
@@ -253,9 +251,7 @@ export async function registerRoutes(
       if (req.params.source === "ours") {
         const musicEngine = registry.get(cmp.engine);
         if (!musicEngine) {
-          return res
-            .status(500)
-            .json({ error: `Engine ${cmp.engine} not found` });
+          return res.status(500).json({ error: `Engine ${cmp.engine} not found` });
         }
 
         const result = await musicEngine.fetchAudio(cmp.ourAudioUrl!);
