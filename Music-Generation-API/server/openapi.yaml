@@ -1,0 +1,397 @@
+openapi: 3.0.3
+info:
+  title: SoundSeed Music Generation API
+  version: 0.2.0
+  description: |
+    REST API for generating music using open-source models (ACE-Step, HeartMuLa)
+    deployed on GPU farms (RunPod). Supports multiple engines via a universal registry.
+
+servers:
+  - url: /
+    description: Current host
+
+tags:
+  - name: Public
+    description: Public endpoints (no auth required)
+  - name: Generation
+    description: Music generation (Bearer token required)
+  - name: Jobs
+    description: Job management (Bearer token required)
+  - name: Diagnostics
+    description: Engine diagnostics (Bearer token required)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-token
+      description: |
+        API Bearer token. Use:
+        Authorization: Bearer <API_BEARER_TOKEN>
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    EngineInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          example: ace-step
+        name:
+          type: string
+          example: ACE-Step v1.5
+        description:
+          type: string
+        maxDuration:
+          type: integer
+          example: 600
+        supportedParams:
+          type: array
+          items:
+            type: string
+        configured:
+          type: boolean
+
+    EnginesResponse:
+      type: object
+      properties:
+        engines:
+          type: array
+          items:
+            $ref: "#/components/schemas/EngineInfo"
+
+    HealthResponse:
+      type: object
+      properties:
+        api:
+          type: boolean
+        aceStep:
+          type: boolean
+        aceStepConfigured:
+          type: boolean
+        heartmula:
+          type: boolean
+        heartmulaConfigured:
+          type: boolean
+
+    CreateGenerationRequest:
+      type: object
+      properties:
+        engine:
+          type: string
+          description: Engine ID to use for generation
+          example: ace-step
+        prompt:
+          type: string
+          description: Text prompt describing the music
+          example: calm ambient piano melody
+        lyrics:
+          type: string
+          nullable: true
+          description: Optional lyrics for vocal generation
+        duration:
+          type: integer
+          minimum: 10
+          maximum: 600
+          description: Duration in seconds
+          example: 30
+        style:
+          type: string
+          nullable: true
+          example: Lo-fi
+        instrument:
+          type: string
+          nullable: true
+          example: Piano
+        bpm:
+          type: integer
+          nullable: true
+        tags:
+          type: string
+          nullable: true
+        negative_tags:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        seed:
+          type: integer
+          nullable: true
+        temperature:
+          type: number
+          nullable: true
+        cfg_scale:
+          type: number
+          nullable: true
+        topk:
+          type: integer
+          nullable: true
+      required: [prompt, duration]
+
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        engine:
+          type: string
+          example: ace-step
+        runpodJobId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [PENDING, IN_PROGRESS, COMPLETED, FAILED]
+        prompt:
+          type: string
+        lyrics:
+          type: string
+          nullable: true
+        duration:
+          type: integer
+        style:
+          type: string
+          nullable: true
+        instrument:
+          type: string
+          nullable: true
+        tempo:
+          type: integer
+          nullable: true
+        inputParams:
+          type: object
+        progress:
+          type: integer
+        outputUrl:
+          type: string
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+paths:
+  # ===== PUBLIC =====
+
+  /api/engines:
+    get:
+      tags: [Public]
+      summary: List registered engines
+      description: Returns all registered music generation engines with their info and configuration status.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnginesResponse"
+              example:
+                engines:
+                  - id: ace-step
+                    name: ACE-Step v1.5
+                    description: Instrumental & vocal music generation with fine-grained DiT controls
+                    maxDuration: 600
+                    supportedParams: [prompt, lyrics, duration, style, instrument]
+                    configured: true
+                  - id: heartmula
+                    name: HeartMuLa
+                    description: Full song generation with vocals & lyrics
+                    maxDuration: 300
+                    supportedParams: [prompt, lyrics, duration, tags, seed, temperature]
+                    configured: true
+
+  /api/health:
+    get:
+      tags: [Public]
+      summary: Health check
+      description: Returns API status and health of each engine.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                api: true
+                aceStep: false
+                aceStepConfigured: true
+                heartmula: false
+                heartmulaConfigured: true
+
+  # ===== GENERATION =====
+
+  /api/generate:
+    post:
+      tags: [Generation]
+      summary: Start a music generation job
+      description: |
+        Creates a new generation job using the specified engine.
+        Requires Bearer token authentication.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGenerationRequest"
+            example:
+              engine: ace-step
+              prompt: calm ambient piano melody
+              duration: 30
+      responses:
+        "201":
+          description: Job created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "400":
+          description: Validation error or unknown engine
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid Bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Engine not configured or GPU unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ===== JOBS =====
+
+  /api/jobs:
+    get:
+      tags: [Jobs]
+      summary: List all jobs
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Job"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/jobs/{id}:
+    get:
+      tags: [Jobs]
+      summary: Get job by ID
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/jobs/{id}/audio:
+    get:
+      tags: [Jobs]
+      summary: Download generated audio
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Audio stream
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Audio not available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ===== DIAGNOSTICS =====
+
+  /api/pod/diagnostics:
+    get:
+      tags: [Diagnostics]
+      summary: Get engine diagnostics
+      description: Returns diagnostic info from all configured engines (GPU status, pod info, etc.)
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
