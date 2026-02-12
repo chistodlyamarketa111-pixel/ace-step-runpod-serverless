@@ -25,10 +25,12 @@ export async function registerRoutes(
   app.get("/api/health", async (_req, res) => {
     const aceStepEngine = registry.get("ace-step");
     const heartmulaEngine = registry.get("heartmula");
+    const yueEngine = registry.get("yue");
 
-    const [aceStepHealthy, heartmulaHealthy] = await Promise.all([
+    const [aceStepHealthy, heartmulaHealthy, yueHealthy] = await Promise.all([
       aceStepEngine?.checkHealth() ?? Promise.resolve(false),
       heartmulaEngine?.checkHealth() ?? Promise.resolve(false),
+      yueEngine?.checkHealth() ?? Promise.resolve(false),
     ]);
 
     res.json({
@@ -37,6 +39,8 @@ export async function registerRoutes(
       aceStepConfigured: aceStepEngine?.isConfigured() ?? false,
       heartmula: heartmulaHealthy,
       heartmulaConfigured: heartmulaEngine?.isConfigured() ?? false,
+      yue: yueHealthy,
+      yueConfigured: yueEngine?.isConfigured() ?? false,
     });
   });
 
@@ -226,6 +230,44 @@ export async function registerRoutes(
       res.json(await heartmula.getGpuSettings());
     },
   );
+
+  // ===== YUE ADMIN =====
+
+  app.get("/api/yue/deploy-command", requireBearerAuth, async (req, res) => {
+    const host = req.get("host") || "localhost:5000";
+    const protocol = req.protocol === "https" ? "https" : (host.includes("replit") ? "https" : "http");
+    const scriptUrl = `${protocol}://${host}/api/yue/server-script`;
+    const command = `pkill -f "python.*gradio_app\\|python.*interface" 2>/dev/null; curl -s "${scriptUrl}" -o /workspace/yue_api_server.py && nohup python /workspace/yue_api_server.py > /workspace/yue_api.log 2>&1 &`;
+    res.json({
+      message: "Run this command in RunPod Web Terminal to deploy the YuE API server",
+      command,
+      scriptUrl,
+      note: "This stops Gradio and starts our lightweight API server on port 8000",
+    });
+  });
+
+  app.get("/api/yue/diagnostics", requireBearerAuth, async (_req, res) => {
+    const yue = await import("./yue");
+    res.json(await yue.getPodDiagnostics());
+  });
+
+  app.get("/api/yue/server-script", async (_req, res) => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const possiblePaths = [
+      path.join(process.cwd(), "scripts", "yue_api_server.py"),
+      path.join(process.cwd(), "Music-Generation-API", "scripts", "yue_api_server.py"),
+    ];
+    for (const scriptPath of possiblePaths) {
+      if (fs.existsSync(scriptPath)) {
+        const script = fs.readFileSync(scriptPath, "utf-8");
+        res.setHeader("Content-Type", "text/plain");
+        res.send(script);
+        return;
+      }
+    }
+    res.status(404).json({ error: "Script not found" });
+  });
 
   // ===== COMPARISON =====
 
