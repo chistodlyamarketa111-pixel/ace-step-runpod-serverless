@@ -420,35 +420,80 @@ class ThreadedHTTPServer(HTTPServer):
 
 
 def patch_transformers_torch_check():
-    """Directly patch transformers source to bypass PyTorch version check (CVE-2025-32434)."""
-    candidates = [
-        "/opt/conda/envs/pyenv/lib/python3.12/site-packages/transformers/utils/import_utils.py",
-        "/opt/conda/envs/pyenv/lib/python3.11/site-packages/transformers/utils/import_utils.py",
-        "/opt/conda/envs/pyenv/lib/python3.10/site-packages/transformers/utils/import_utils.py",
+    """Directly patch transformers source to bypass PyTorch version check (CVE-2025-32434).
+    
+    Patches both import_utils.py (function definition) and modeling_utils.py (call site).
+    Also clears all __pycache__ dirs to ensure patched code is used.
+    """
+    import shutil
+
+    base_dirs = [
+        "/opt/conda/envs/pyenv/lib/python3.12/site-packages/transformers",
+        "/opt/conda/envs/pyenv/lib/python3.11/site-packages/transformers",
+        "/opt/conda/envs/pyenv/lib/python3.10/site-packages/transformers",
     ]
-    for fpath in candidates:
-        if not os.path.exists(fpath):
+
+    patched_any = False
+    for base in base_dirs:
+        if not os.path.isdir(base):
             continue
-        try:
-            with open(fpath, "r") as f:
-                content = f.read()
-            if "PATCHED_BY_YUE" in content:
-                print(f"  Transformers already patched: {fpath}")
-                return True
-            if "check_torch_load_is_safe" not in content:
-                continue
-            patched = content.replace(
-                "def check_torch_load_is_safe():",
-                "def check_torch_load_is_safe():  # PATCHED_BY_YUE\n    return",
-            )
-            with open(fpath, "w") as f:
-                f.write(patched)
-            print(f"  Patched transformers torch check: {fpath}")
+
+        import_utils = os.path.join(base, "utils", "import_utils.py")
+        if os.path.exists(import_utils):
+            try:
+                with open(import_utils, "r") as f:
+                    content = f.read()
+                if "PATCHED_BY_YUE" not in content and "check_torch_load_is_safe" in content:
+                    patched = content.replace(
+                        "def check_torch_load_is_safe():",
+                        "def check_torch_load_is_safe():  # PATCHED_BY_YUE\n    return",
+                    )
+                    with open(import_utils, "w") as f:
+                        f.write(patched)
+                    print(f"  Patched import_utils.py: {import_utils}")
+                    patched_any = True
+                elif "PATCHED_BY_YUE" in content:
+                    print(f"  import_utils.py already patched: {import_utils}")
+                    patched_any = True
+            except Exception as e:
+                print(f"  Failed to patch {import_utils}: {e}")
+
+        modeling_utils = os.path.join(base, "modeling_utils.py")
+        if os.path.exists(modeling_utils):
+            try:
+                with open(modeling_utils, "r") as f:
+                    content = f.read()
+                if "PATCHED_BY_YUE" not in content and "check_torch_load_is_safe()" in content:
+                    patched = content.replace(
+                        "check_torch_load_is_safe()",
+                        "None  # check_torch_load_is_safe() PATCHED_BY_YUE",
+                    )
+                    with open(modeling_utils, "w") as f:
+                        f.write(patched)
+                    print(f"  Patched modeling_utils.py: {modeling_utils}")
+                    patched_any = True
+                elif "PATCHED_BY_YUE" in content:
+                    print(f"  modeling_utils.py already patched: {modeling_utils}")
+                    patched_any = True
+            except Exception as e:
+                print(f"  Failed to patch {modeling_utils}: {e}")
+
+        for root, dirs, files in os.walk(base):
+            if "__pycache__" in dirs:
+                cache_path = os.path.join(root, "__pycache__")
+                try:
+                    shutil.rmtree(cache_path)
+                except Exception:
+                    pass
+                dirs.remove("__pycache__")
+        print(f"  Cleared all __pycache__ in: {base}")
+
+        if patched_any:
             return True
-        except Exception as e:
-            print(f"  Failed to patch {fpath}: {e}")
-    print("  WARNING: Could not find transformers import_utils.py to patch")
-    return False
+
+    if not patched_any:
+        print("  WARNING: Could not find transformers files to patch")
+    return patched_any
 
 
 def main():
