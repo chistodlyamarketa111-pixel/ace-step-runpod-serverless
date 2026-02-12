@@ -151,44 +151,31 @@ async function pollGradioResult(
           const data = JSON.parse(event.data);
           log(`YuE complete data: ${JSON.stringify(data).substring(0, 500)}`, "yue");
 
-          if (typeof data === "string") {
-            state.logs = data;
-            const outputMatch = data.match(/Saved.*?(\S+\.mp3)/);
-            if (outputMatch) {
-              state.status = "COMPLETED";
-              state.audioFiles = [outputMatch[1]];
-              log(`YuE task ${taskId} completed: ${outputMatch[1]}`, "yue");
-            } else {
-              await findOutputFiles(state, taskId);
-            }
-          } else if (Array.isArray(data)) {
-            if (typeof data[0] === "string") {
-              state.logs = data[0];
-              const outputMatch = data[0].match(/Saved.*?(\S+\.mp3)/);
-              if (outputMatch) {
-                state.status = "COMPLETED";
-                state.audioFiles = [outputMatch[1]];
-              } else {
-                await findOutputFiles(state, taskId);
-              }
-            } else {
-              const audioFiles = extractAudioFiles(data);
-              if (audioFiles.length > 0) {
-                state.status = "COMPLETED";
-                state.audioFiles = audioFiles;
-              } else {
-                await findOutputFiles(state, taskId);
-              }
-            }
-          } else {
-            const audioFiles = extractAudioFiles(data);
-            if (audioFiles.length > 0) {
-              state.status = "COMPLETED";
-              state.audioFiles = audioFiles;
-            } else {
-              await findOutputFiles(state, taskId);
-            }
+          const logText = Array.isArray(data) ? (typeof data[0] === "string" ? data[0] : "") : (typeof data === "string" ? data : "");
+          state.logs = logText;
+
+          if (logText.includes("Inference started")) {
+            log(`YuE task ${taskId}: inference started in background, polling for output files...`, "yue");
+            await pollForOutputFiles(state, taskId);
+            return;
           }
+
+          const outputMatch = logText.match(/Saved.*?(\S+\.mp3)/i);
+          if (outputMatch) {
+            state.status = "COMPLETED";
+            state.audioFiles = [outputMatch[1]];
+            log(`YuE task ${taskId} completed: ${outputMatch[1]}`, "yue");
+            return;
+          }
+
+          const audioFiles = extractAudioFiles(data);
+          if (audioFiles.length > 0) {
+            state.status = "COMPLETED";
+            state.audioFiles = audioFiles;
+            return;
+          }
+
+          await pollForOutputFiles(state, taskId);
         } catch (e: any) {
           state.status = "FAILED";
           state.error = `Failed to parse result: ${e.message}`;
@@ -235,6 +222,101 @@ async function pollGradioResult(
       state.error = e.message;
     }
     log(`YuE poll error for ${taskId}: ${e.message}`, "yue");
+  }
+}
+
+async function pollForOutputFiles(state: YueJobState, taskId: string): Promise<void> {
+  const maxWaitMs = 600000;
+  const pollIntervalMs = 15000;
+  const startTime = Date.now();
+
+  log(`YuE polling for output files (max ${maxWaitMs / 60000} min)...`, "yue");
+
+  while (Date.now() - startTime < maxWaitMs) {
+    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+
+    try {
+      const logResult = await callGradioEndpoint("/refresh_state", [state.logs || ""]);
+      if (logResult) {
+        const logText = Array.isArray(logResult) ? logResult[0] : logResult;
+        if (typeof logText === "string") {
+          state.logs = logText;
+          log(`YuE logs update (last 200 chars): ${logText.substring(logText.length - 200)}`, "yue");
+
+          const savedMatch = logText.match(/Saved.*?(\S+\.mp3)/i);
+          if (savedMatch) {
+            state.status = "COMPLETED";
+            state.audioFiles = [savedMatch[1]];
+            log(`YuE task ${taskId} completed: ${savedMatch[1]}`, "yue");
+            return;
+          }
+
+          if (logText.includes("Error") || logText.includes("error") || logText.includes("CUDA out of memory")) {
+            const errorLines = logText.split("\n").filter(l => l.toLowerCase().includes("error")).slice(-3);
+            state.status = "FAILED";
+            state.error = errorLines.join("; ") || "Generation failed";
+            log(`YuE task ${taskId} failed: ${state.error}`, "yue");
+            return;
+          }
+
+          if (logText.includes("Generation completed") || logText.includes("Done!")) {
+            const fileResult = await callGradioEndpoint("/update_file_explorer", []);
+            if (fileResult) {
+              log(`YuE file explorer after completion: ${JSON.stringify(fileResult).substring(0, 500)}`, "yue");
+            }
+
+            const getFileResult = await callGradioEndpoint("/update_file_explorer_2", []);
+            if (getFileResult) {
+              log(`YuE file explorer 2: ${JSON.stringify(getFileResult).substring(0, 500)}`, "yue");
+              const files = extractAudioFiles(getFileResult);
+              if (files.length > 0) {
+                state.status = "COMPLETED";
+                state.audioFiles = [files[files.length - 1]];
+                log(`YuE task ${taskId} completed via explorer: ${files[files.length - 1]}`, "yue");
+                return;
+              }
+            }
+          }
+        }
+      }
+    } catch (e: any) {
+      log(`YuE poll iteration error: ${e.message}`, "yue");
+    }
+  }
+
+  state.status = "FAILED";
+  state.error = "Generation timed out waiting for output files (10 minutes)";
+  log(`YuE task ${taskId} timed out`, "yue");
+}
+
+async function callGradioEndpoint(endpoint: string, data: any[]): Promise<any> {
+  try {
+    const callUrl = `${getBaseUrl()}${API_PREFIX}/call${endpoint}`;
+    const res = await fetch(callUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const result = await res.json();
+    const eventId = result.event_id;
+    if (!eventId) return null;
+
+    const sseRes = await fetch(`${callUrl}/${eventId}`, {
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!sseRes.ok) return null;
+    const text = await sseRes.text();
+    const events = parseSSEEvents(text);
+    for (const ev of events) {
+      if (ev.event === "complete") {
+        return JSON.parse(ev.data);
+      }
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 
