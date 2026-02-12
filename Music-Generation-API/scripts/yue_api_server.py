@@ -120,6 +120,10 @@ def run_job(job):
 
     use_conda = os.path.isfile(CONDA_ACTIVATE_PATH)
 
+    env = os.environ.copy()
+    env["HF_HUB_OFFLINE"] = "1"
+    env["TRANSFORMERS_OFFLINE"] = "1"
+
     if use_conda:
         quoted = " ".join(shlex.quote(a) for a in argv)
         shell_cmd = f"source {CONDA_ACTIVATE_PATH} && conda activate {CONDA_ENV_NAME} && {quoted}"
@@ -130,6 +134,7 @@ def run_job(job):
             stderr=subprocess.STDOUT,
             preexec_fn=os.setsid,
             cwd=BASE_YUE_DIR,
+            env=env,
         )
     else:
         print(f"[{job.id}] Running: {' '.join(argv[:6])}...")
@@ -139,6 +144,7 @@ def run_job(job):
             stderr=subprocess.STDOUT,
             preexec_fn=os.setsid,
             cwd=BASE_YUE_DIR,
+            env=env,
         )
 
     try:
