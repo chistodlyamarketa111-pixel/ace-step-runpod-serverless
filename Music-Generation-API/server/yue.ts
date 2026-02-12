@@ -21,52 +21,13 @@ interface YueJobState {
   audioFiles?: string[];
   error?: string;
   startedAt: number;
+  logs?: string;
 }
 
 const jobStates = new Map<string, YueJobState>();
 
-export async function discoverApiEndpoints(): Promise<string[]> {
-  if (!isConfigured()) return [];
-  try {
-    const res = await fetch(`${getBaseUrl()}/info`, {
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return [];
-    const info = await res.json();
-    const endpoints: string[] = [];
-    if (info.named_endpoints) {
-      for (const name of Object.keys(info.named_endpoints)) {
-        endpoints.push(name);
-      }
-    }
-    return endpoints;
-  } catch {
-    return [];
-  }
-}
-
-async function findGenerateEndpoint(): Promise<string> {
-  const endpoints = await discoverApiEndpoints();
-  log(`YuE discovered endpoints: ${JSON.stringify(endpoints)}`, "yue");
-
-  const preferred = [
-    "/generate_music",
-    "/generate",
-    "/predict",
-    "/run",
-  ];
-
-  for (const ep of preferred) {
-    if (endpoints.includes(ep)) return ep;
-  }
-
-  const generateEp = endpoints.find(
-    (e) => e.includes("generat") || e.includes("music") || e.includes("run")
-  );
-  if (generateEp) return generateEp;
-
-  return endpoints[0] || "/predict";
-}
+const API_PREFIX = "/gradio_api";
+const GENERATE_ENDPOINT = "/on_generate_click";
 
 export async function submitTask(params: {
   prompt: string;
@@ -81,27 +42,53 @@ export async function submitTask(params: {
     throw new Error("YuE Pod is not configured. Set YUE_POD_ID.");
   }
 
-  const endpointName = await findGenerateEndpoint();
-  log(`YuE using endpoint: ${endpointName}`, "yue");
-
   const lyricsText = params.lyrics?.trim() || buildDefaultLyrics(params.prompt);
   const genreText = params.genre || params.style || buildGenreFromPrompt(params.prompt);
   const numSegments = params.num_segments || 2;
-  const seed = params.seed ?? -1;
+  const seed = params.seed ?? 42;
 
-  const data = [
-    lyricsText,
+  const dataArray = [
+    "/workspace/models/YuE-s1-7B-anneal-en-cot",
+    "bf16",
+    "/workspace/models/YuE-s2-1B-general",
+    "bf16",
+    "/workspace/YuE-exllamav2-UI/src/yue/mm_tokenizer_v0.2_hf/tokenizer.model",
     genreText,
+    lyricsText,
     numSegments,
+    4,
+    "/workspace/outputs",
+    0,
+    3000,
     seed,
+    false,
+    null,
+    0,
+    30,
+    false,
+    null,
+    null,
+    0,
+    30,
+    false,
+    false,
+    "",
+    16384,
+    "FP16",
+    8192,
+    "FP16",
   ];
 
-  log(`YuE submit: endpoint=${endpointName}, data=${JSON.stringify(data)}`, "yue");
+  log(`YuE submit: genre=${genreText}, segments=${numSegments}, seed=${seed}`, "yue");
+  log(`YuE lyrics (first 200 chars): ${lyricsText.substring(0, 200)}`, "yue");
 
-  const response = await fetch(`${getBaseUrl()}/call${endpointName}`, {
+  const callUrl = `${getBaseUrl()}${API_PREFIX}/call${GENERATE_ENDPOINT}`;
+  log(`YuE POST to: ${callUrl}`, "yue");
+
+  const response = await fetch(callUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ data }),
+    body: JSON.stringify({ data: dataArray }),
     signal: AbortSignal.timeout(30000),
   });
 
@@ -126,14 +113,13 @@ export async function submitTask(params: {
     startedAt: Date.now(),
   });
 
-  pollGradioResult(taskId, endpointName, eventId);
+  pollGradioResult(taskId, eventId);
 
   return { task_id: taskId };
 }
 
 async function pollGradioResult(
   taskId: string,
-  endpointName: string,
   eventId: string,
 ): Promise<void> {
   const maxWaitMs = 900000;
@@ -141,7 +127,7 @@ async function pollGradioResult(
   if (!state) return;
 
   try {
-    const sseUrl = `${getBaseUrl()}/call${endpointName}/${eventId}`;
+    const sseUrl = `${getBaseUrl()}${API_PREFIX}/call${GENERATE_ENDPOINT}/${eventId}`;
     log(`YuE SSE polling: ${sseUrl}`, "yue");
 
     const response = await fetch(sseUrl, {
@@ -155,7 +141,7 @@ async function pollGradioResult(
     }
 
     const text = await response.text();
-    log(`YuE SSE response (first 500 chars): ${text.substring(0, 500)}`, "yue");
+    log(`YuE SSE response (first 1000 chars): ${text.substring(0, 1000)}`, "yue");
 
     const events = parseSSEEvents(text);
 
@@ -163,15 +149,45 @@ async function pollGradioResult(
       if (event.event === "complete") {
         try {
           const data = JSON.parse(event.data);
-          log(`YuE complete data: ${JSON.stringify(data)}`, "yue");
-          const audioFiles = extractAudioFiles(data);
-          if (audioFiles.length > 0) {
-            state.status = "COMPLETED";
-            state.audioFiles = audioFiles;
-            log(`YuE task ${taskId} completed with ${audioFiles.length} audio files`, "yue");
+          log(`YuE complete data: ${JSON.stringify(data).substring(0, 500)}`, "yue");
+
+          if (typeof data === "string") {
+            state.logs = data;
+            const outputMatch = data.match(/Saved.*?(\S+\.mp3)/);
+            if (outputMatch) {
+              state.status = "COMPLETED";
+              state.audioFiles = [outputMatch[1]];
+              log(`YuE task ${taskId} completed: ${outputMatch[1]}`, "yue");
+            } else {
+              await findOutputFiles(state, taskId);
+            }
+          } else if (Array.isArray(data)) {
+            if (typeof data[0] === "string") {
+              state.logs = data[0];
+              const outputMatch = data[0].match(/Saved.*?(\S+\.mp3)/);
+              if (outputMatch) {
+                state.status = "COMPLETED";
+                state.audioFiles = [outputMatch[1]];
+              } else {
+                await findOutputFiles(state, taskId);
+              }
+            } else {
+              const audioFiles = extractAudioFiles(data);
+              if (audioFiles.length > 0) {
+                state.status = "COMPLETED";
+                state.audioFiles = audioFiles;
+              } else {
+                await findOutputFiles(state, taskId);
+              }
+            }
           } else {
-            state.status = "FAILED";
-            state.error = "Generation completed but no audio files returned";
+            const audioFiles = extractAudioFiles(data);
+            if (audioFiles.length > 0) {
+              state.status = "COMPLETED";
+              state.audioFiles = audioFiles;
+            } else {
+              await findOutputFiles(state, taskId);
+            }
           }
         } catch (e: any) {
           state.status = "FAILED";
@@ -188,6 +204,18 @@ async function pollGradioResult(
       }
 
       if (event.event === "heartbeat") {
+        continue;
+      }
+
+      if (event.event === "generating") {
+        try {
+          const data = JSON.parse(event.data);
+          if (typeof data === "string") {
+            state.logs = data;
+          } else if (Array.isArray(data) && typeof data[0] === "string") {
+            state.logs = data[0];
+          }
+        } catch {}
         continue;
       }
     }
@@ -208,6 +236,50 @@ async function pollGradioResult(
     }
     log(`YuE poll error for ${taskId}: ${e.message}`, "yue");
   }
+}
+
+async function findOutputFiles(state: YueJobState, taskId: string): Promise<void> {
+  try {
+    const listUrl = `${getBaseUrl()}${API_PREFIX}/call/update_file_explorer`;
+    const res = await fetch(listUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: [] }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      const result = await res.json();
+      const eventId = result.event_id;
+      if (eventId) {
+        const sseRes = await fetch(`${listUrl}/${eventId}`, {
+          signal: AbortSignal.timeout(10000),
+        });
+        if (sseRes.ok) {
+          const text = await sseRes.text();
+          const events = parseSSEEvents(text);
+          for (const ev of events) {
+            if (ev.event === "complete") {
+              const data = JSON.parse(ev.data);
+              log(`YuE file explorer: ${JSON.stringify(data).substring(0, 500)}`, "yue");
+              const files = extractAudioFiles(data);
+              if (files.length > 0) {
+                const sorted = files.sort().reverse();
+                state.status = "COMPLETED";
+                state.audioFiles = [sorted[0]];
+                log(`YuE task ${taskId} completed via file explorer: ${sorted[0]}`, "yue");
+                return;
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (e: any) {
+    log(`YuE file explorer error: ${e.message}`, "yue");
+  }
+
+  state.status = "FAILED";
+  state.error = "Generation completed but no audio files found";
 }
 
 function parseSSEEvents(text: string): Array<{ event: string; data: string }> {
@@ -241,8 +313,10 @@ function extractAudioFiles(data: any): string[] {
   function traverse(obj: any) {
     if (!obj) return;
 
-    if (typeof obj === "string" && (obj.endsWith(".wav") || obj.endsWith(".mp3") || obj.endsWith(".flac"))) {
-      files.push(obj);
+    if (typeof obj === "string") {
+      if (obj.endsWith(".wav") || obj.endsWith(".mp3") || obj.endsWith(".flac")) {
+        files.push(obj);
+      }
       return;
     }
 
@@ -286,6 +360,7 @@ export async function queryTaskStatus(taskId: string): Promise<{
   status: string;
   audio_path?: string;
   error?: string;
+  logs?: string;
 }> {
   const state = jobStates.get(taskId);
   if (!state) {
@@ -296,6 +371,7 @@ export async function queryTaskStatus(taskId: string): Promise<{
     return {
       status: "COMPLETED",
       audio_path: state.audioFiles[0],
+      logs: state.logs,
     };
   }
 
@@ -303,10 +379,11 @@ export async function queryTaskStatus(taskId: string): Promise<{
     return {
       status: "FAILED",
       error: state.error || "Generation failed",
+      logs: state.logs,
     };
   }
 
-  return { status: "IN_PROGRESS" };
+  return { status: "IN_PROGRESS", logs: state.logs };
 }
 
 export async function fetchAudio(audioPath: string): Promise<{ buffer: Buffer; contentType: string }> {
@@ -359,6 +436,8 @@ export async function getPodDiagnostics(): Promise<Record<string, any>> {
     podId: YUE_POD_ID || null,
     port: YUE_PORT,
     baseUrl: isConfigured() ? getBaseUrl() : null,
+    apiPrefix: API_PREFIX,
+    generateEndpoint: GENERATE_ENDPOINT,
     timestamp: new Date().toISOString(),
     activeJobs: jobStates.size,
   };
@@ -366,8 +445,13 @@ export async function getPodDiagnostics(): Promise<Record<string, any>> {
   if (!isConfigured()) return diagnostics;
 
   try {
-    const endpoints = await discoverApiEndpoints();
-    diagnostics.endpoints = endpoints;
+    const res = await fetch(`${getBaseUrl()}${API_PREFIX}/info`, {
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      const info = await res.json();
+      diagnostics.endpoints = Object.keys(info.named_endpoints || {});
+    }
   } catch (e: any) {
     diagnostics.endpoints = { error: e.message };
   }
