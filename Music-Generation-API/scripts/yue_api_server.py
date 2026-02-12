@@ -20,7 +20,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, unquote
 from datetime import datetime
 
-PORT = 8000
+PORT = int(os.environ.get("YUE_API_PORT", "7860"))
 BASE_YUE_DIR = "/workspace/YuE-exllamav2-UI/src/yue"
 BASE_MODELS_DIR = "/workspace/models"
 BASE_OUTPUTS_DIR = "/workspace/outputs"
