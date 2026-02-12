@@ -25,48 +25,33 @@ interface YueJobState {
 
 const jobStates = new Map<string, YueJobState>();
 
-export async function discoverApiEndpoints(): Promise<string[]> {
-  if (!isConfigured()) return [];
-  try {
-    const res = await fetch(`${getBaseUrl()}/info`, {
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return [];
-    const info = await res.json();
-    const endpoints: string[] = [];
-    if (info.named_endpoints) {
-      for (const name of Object.keys(info.named_endpoints)) {
-        endpoints.push(name);
-      }
-    }
-    return endpoints;
-  } catch {
-    return [];
-  }
-}
+const DEFAULT_PARAMS = {
+  stage1Model: "/workspace/models/YuE-s1-7B-anneal-en-cot",
+  stage1Quant: "bf16",
+  stage2Model: "/workspace/models/YuE-s2-1B-general",
+  stage2Quant: "bf16",
+  tokenizerModel: "/workspace/YuE-exllamav2-UI/src/yue/mm_tokenizer_v0.2_hf/tokenizer.model",
+  stage2BatchSize: 4,
+  outputDir: "/workspace/outputs",
+  cudaIndex: 0,
+  maxNewTokens: 3000,
+  stage1CacheSize: 16384,
+  stage1CacheMode: "FP16",
+  stage2CacheSize: 8192,
+  stage2CacheMode: "FP16",
+};
 
-async function findGenerateEndpoint(): Promise<string> {
-  const endpoints = await discoverApiEndpoints();
-  log(`YuE discovered endpoints: ${JSON.stringify(endpoints)}`, "yue");
+const DEFAULT_LYRICS = `[verse]
+Staring at the sunset, colors paint the sky
+Thoughts of you keep swirling, can't deny
+I know I let you down, I made mistakes
+But I'm here to mend the heart I didn't break
 
-  const preferred = [
-    "/generate_music",
-    "/generate",
-    "/predict",
-    "/run",
-  ];
-
-  for (const ep of preferred) {
-    if (endpoints.includes(ep)) return ep;
-  }
-
-  const generateEp = endpoints.find(
-    (e) => e.includes("generat") || e.includes("music") || e.includes("run")
-  );
-  if (generateEp) return generateEp;
-
-  return endpoints[0] || "/predict";
-}
+[chorus]
+Every road you take, I'll be one step behind
+Every dream you chase, I'm reaching for the light
+You can't fight this feeling now
+I won't back down`;
 
 export async function submitTask(params: {
   prompt: string;
@@ -81,24 +66,46 @@ export async function submitTask(params: {
     throw new Error("YuE Pod is not configured. Set YUE_POD_ID.");
   }
 
-  const endpointName = await findGenerateEndpoint();
-  log(`YuE using endpoint: ${endpointName}`, "yue");
-
   const lyricsText = params.lyrics?.trim() || buildDefaultLyrics(params.prompt);
   const genreText = params.genre || params.style || buildGenreFromPrompt(params.prompt);
   const numSegments = params.num_segments || 2;
-  const seed = params.seed ?? -1;
+  const seed = params.seed ?? 42;
 
   const data = [
-    lyricsText,
+    DEFAULT_PARAMS.stage1Model,
+    DEFAULT_PARAMS.stage1Quant,
+    DEFAULT_PARAMS.stage2Model,
+    DEFAULT_PARAMS.stage2Quant,
+    DEFAULT_PARAMS.tokenizerModel,
     genreText,
+    lyricsText,
     numSegments,
+    DEFAULT_PARAMS.stage2BatchSize,
+    DEFAULT_PARAMS.outputDir,
+    DEFAULT_PARAMS.cudaIndex,
+    DEFAULT_PARAMS.maxNewTokens,
     seed,
+    false,
+    null,
+    0,
+    30,
+    false,
+    null,
+    null,
+    0,
+    30,
+    false,
+    false,
+    "",
+    DEFAULT_PARAMS.stage1CacheSize,
+    DEFAULT_PARAMS.stage1CacheMode,
+    DEFAULT_PARAMS.stage2CacheSize,
+    DEFAULT_PARAMS.stage2CacheMode,
   ];
 
-  log(`YuE submit: endpoint=${endpointName}, data=${JSON.stringify(data)}`, "yue");
+  log(`YuE submit: genre="${genreText}", lyrics_len=${lyricsText.length}, segments=${numSegments}, seed=${seed}`, "yue");
 
-  const response = await fetch(`${getBaseUrl()}/call${endpointName}`, {
+  const response = await fetch(`${getBaseUrl()}/gradio_api/call/on_generate_click`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ data }),
@@ -126,14 +133,13 @@ export async function submitTask(params: {
     startedAt: Date.now(),
   });
 
-  pollGradioResult(taskId, endpointName, eventId);
+  pollGradioResult(taskId, eventId);
 
   return { task_id: taskId };
 }
 
 async function pollGradioResult(
   taskId: string,
-  endpointName: string,
   eventId: string,
 ): Promise<void> {
   const maxWaitMs = 900000;
@@ -141,7 +147,7 @@ async function pollGradioResult(
   if (!state) return;
 
   try {
-    const sseUrl = `${getBaseUrl()}/call${endpointName}/${eventId}`;
+    const sseUrl = `${getBaseUrl()}/gradio_api/call/on_generate_click/${eventId}`;
     log(`YuE SSE polling: ${sseUrl}`, "yue");
 
     const response = await fetch(sseUrl, {
@@ -163,7 +169,7 @@ async function pollGradioResult(
       if (event.event === "complete") {
         try {
           const data = JSON.parse(event.data);
-          log(`YuE complete data: ${JSON.stringify(data)}`, "yue");
+          log(`YuE complete data: ${JSON.stringify(data).substring(0, 1000)}`, "yue");
           const audioFiles = extractAudioFiles(data);
           if (audioFiles.length > 0) {
             state.status = "COMPLETED";
@@ -320,7 +326,7 @@ export async function fetchAudio(audioPath: string): Promise<{ buffer: Buffer; c
   } else if (audioPath.startsWith("/file=")) {
     url = `${getBaseUrl()}${audioPath}`;
   } else {
-    url = `${getBaseUrl()}/file=${encodeURIComponent(audioPath)}`;
+    url = `${getBaseUrl()}/gradio_api/file=${encodeURIComponent(audioPath)}`;
   }
 
   log(`Fetching YuE audio from: ${url}`, "yue");
@@ -364,13 +370,6 @@ export async function getPodDiagnostics(): Promise<Record<string, any>> {
   };
 
   if (!isConfigured()) return diagnostics;
-
-  try {
-    const endpoints = await discoverApiEndpoints();
-    diagnostics.endpoints = endpoints;
-  } catch (e: any) {
-    diagnostics.endpoints = { error: e.message };
-  }
 
   try {
     const healthOk = await checkHealth();
