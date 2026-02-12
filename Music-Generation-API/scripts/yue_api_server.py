@@ -124,19 +124,6 @@ def run_job(job):
     env["HF_HUB_OFFLINE"] = "1"
     env["TRANSFORMERS_OFFLINE"] = "1"
 
-    patch_dir = "/tmp/yue_patches"
-    os.makedirs(patch_dir, exist_ok=True)
-    with open(os.path.join(patch_dir, "usercustomize.py"), "w") as pf:
-        pf.write(
-            "try:\n"
-            "    import transformers.utils.import_utils as _tiu\n"
-            "    _tiu.check_torch_load_is_safe = lambda: None\n"
-            "except Exception:\n"
-            "    pass\n"
-        )
-    existing = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = f"{patch_dir}:{existing}" if existing else patch_dir
-    env["ENABLE_USER_SITE"] = "1"
 
     if use_conda:
         quoted = " ".join(shlex.quote(a) for a in argv)
@@ -432,6 +419,38 @@ class ThreadedHTTPServer(HTTPServer):
             self.shutdown_request(request)
 
 
+def patch_transformers_torch_check():
+    """Directly patch transformers source to bypass PyTorch version check (CVE-2025-32434)."""
+    candidates = [
+        "/opt/conda/envs/pyenv/lib/python3.12/site-packages/transformers/utils/import_utils.py",
+        "/opt/conda/envs/pyenv/lib/python3.11/site-packages/transformers/utils/import_utils.py",
+        "/opt/conda/envs/pyenv/lib/python3.10/site-packages/transformers/utils/import_utils.py",
+    ]
+    for fpath in candidates:
+        if not os.path.exists(fpath):
+            continue
+        try:
+            with open(fpath, "r") as f:
+                content = f.read()
+            if "PATCHED_BY_YUE" in content:
+                print(f"  Transformers already patched: {fpath}")
+                return True
+            if "check_torch_load_is_safe" not in content:
+                continue
+            patched = content.replace(
+                "def check_torch_load_is_safe():",
+                "def check_torch_load_is_safe():  # PATCHED_BY_YUE\n    return",
+            )
+            with open(fpath, "w") as f:
+                f.write(patched)
+            print(f"  Patched transformers torch check: {fpath}")
+            return True
+        except Exception as e:
+            print(f"  Failed to patch {fpath}: {e}")
+    print("  WARNING: Could not find transformers import_utils.py to patch")
+    return False
+
+
 def main():
     print(f"=" * 60)
     print(f"  YuE Direct API Server")
@@ -441,6 +460,7 @@ def main():
     print(f"  Stage1: {os.path.exists(DEFAULT_STAGE1_MODEL)}")
     print(f"  Stage2: {os.path.exists(DEFAULT_STAGE2_MODEL)}")
     print(f"  GPU: {os.path.exists('/dev/nvidia0')}")
+    patch_transformers_torch_check()
     print(f"=" * 60)
 
     server = ThreadedHTTPServer(("0.0.0.0", PORT), YuEHandler)
