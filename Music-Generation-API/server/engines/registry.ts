@@ -1,6 +1,7 @@
 import type { MusicEngine } from "./base";
 import { AceStepEngine } from "./ace-step";
 import { HeartMuLaEngine } from "./heartmula";
+import { YuEEngine } from "./yue";
 import { log } from "../index";
 
 class EngineRegistry {
@@ -36,6 +37,7 @@ export const registry = new EngineRegistry();
 export function initializeEngines(): void {
   registry.register(new AceStepEngine());
   registry.register(new HeartMuLaEngine());
+  registry.register(new YuEEngine());
 
   const total = registry.getAll().length;
   const configured = registry.getAll().filter((e) => e.isConfigured()).length;

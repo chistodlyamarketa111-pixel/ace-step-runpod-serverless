@@ -170,6 +170,7 @@ export async function registerRoutes(
   app.get("/api/pod/diagnostics", requireBearerAuth, async (_req, res) => {
     const aceStepEngine = registry.get("ace-step");
     const heartmulaEngine = registry.get("heartmula");
+    const yueEngine = registry.get("yue");
 
     const diagnostics: Record<string, any> = {};
 
@@ -178,6 +179,9 @@ export async function registerRoutes(
     }
     if (heartmulaEngine) {
       diagnostics.heartmula = await heartmulaEngine.getDiagnostics();
+    }
+    if (yueEngine) {
+      diagnostics.yue = await yueEngine.getDiagnostics();
     }
 
     res.json(diagnostics);
