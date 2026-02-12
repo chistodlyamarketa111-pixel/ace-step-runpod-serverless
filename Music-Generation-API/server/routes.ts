@@ -25,12 +25,10 @@ export async function registerRoutes(
   app.get("/api/health", async (_req, res) => {
     const aceStepEngine = registry.get("ace-step");
     const heartmulaEngine = registry.get("heartmula");
-    const yueEngine = registry.get("yue");
 
-    const [aceStepHealthy, heartmulaHealthy, yueHealthy] = await Promise.all([
+    const [aceStepHealthy, heartmulaHealthy] = await Promise.all([
       aceStepEngine?.checkHealth() ?? Promise.resolve(false),
       heartmulaEngine?.checkHealth() ?? Promise.resolve(false),
-      yueEngine?.checkHealth() ?? Promise.resolve(false),
     ]);
 
     res.json({
@@ -39,8 +37,6 @@ export async function registerRoutes(
       aceStepConfigured: aceStepEngine?.isConfigured() ?? false,
       heartmula: heartmulaHealthy,
       heartmulaConfigured: heartmulaEngine?.isConfigured() ?? false,
-      yue: yueHealthy,
-      yueConfigured: yueEngine?.isConfigured() ?? false,
     });
   });
 
