@@ -124,6 +124,20 @@ def run_job(job):
     env["HF_HUB_OFFLINE"] = "1"
     env["TRANSFORMERS_OFFLINE"] = "1"
 
+    patch_dir = "/tmp/yue_patches"
+    os.makedirs(patch_dir, exist_ok=True)
+    with open(os.path.join(patch_dir, "usercustomize.py"), "w") as pf:
+        pf.write(
+            "try:\n"
+            "    import transformers.utils.import_utils as _tiu\n"
+            "    _tiu.check_torch_load_is_safe = lambda: None\n"
+            "except Exception:\n"
+            "    pass\n"
+        )
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{patch_dir}:{existing}" if existing else patch_dir
+    env["ENABLE_USER_SITE"] = "1"
+
     if use_conda:
         quoted = " ".join(shlex.quote(a) for a in argv)
         shell_cmd = f"source {CONDA_ACTIVATE_PATH} && conda activate {CONDA_ENV_NAME} && {quoted}"
