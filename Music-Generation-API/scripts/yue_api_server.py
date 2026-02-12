@@ -129,6 +129,7 @@ def run_job(job):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             preexec_fn=os.setsid,
+            cwd=BASE_YUE_DIR,
         )
     else:
         print(f"[{job.id}] Running: {' '.join(argv[:6])}...")
@@ -137,6 +138,7 @@ def run_job(job):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             preexec_fn=os.setsid,
+            cwd=BASE_YUE_DIR,
         )
 
     try:
