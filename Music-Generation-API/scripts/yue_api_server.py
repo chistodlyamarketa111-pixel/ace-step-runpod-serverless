@@ -224,6 +224,260 @@ def find_output_files(job):
     return files
 
 
+def find_stems_for_mix(mix_path):
+    """Given a mixed.mp3 path, find the corresponding vocal and instrumental stems."""
+    basename = os.path.basename(mix_path)
+    prefix = basename.replace("_mixed.mp3", "")
+    stems_dir = os.path.join(BASE_OUTPUTS_DIR, "vocoder", "stems")
+    vtrack = os.path.join(stems_dir, f"{prefix}_vtrack.mp3")
+    itrack = os.path.join(stems_dir, f"{prefix}_itrack.mp3")
+    return vtrack if os.path.exists(vtrack) else None, itrack if os.path.exists(itrack) else None
+
+
+BASE_RVC_MODELS_DIR = "/workspace/models/rvc"
+PP_OUTPUTS_DIR = os.path.join(BASE_OUTPUTS_DIR, "postprocessed")
+os.makedirs(PP_OUTPUTS_DIR, exist_ok=True)
+os.makedirs(BASE_RVC_MODELS_DIR, exist_ok=True)
+
+pp_jobs = {}
+pp_jobs_lock = threading.Lock()
+
+
+class PPJob:
+    def __init__(self, pp_id, source_job_id, rvc_model=None):
+        self.id = pp_id
+        self.source_job_id = source_job_id
+        self.rvc_model = rvc_model
+        self.status = "PENDING"
+        self.logs = ""
+        self.error = None
+        self.output_files = []
+        self.created_at = datetime.utcnow().isoformat()
+        self.completed_at = None
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "source_job_id": self.source_job_id,
+            "status": self.status,
+            "logs": self.logs[-2000:] if self.logs else "",
+            "error": self.error,
+            "output_files": self.output_files,
+            "created_at": self.created_at,
+            "completed_at": self.completed_at,
+        }
+
+
+def check_rvc_available():
+    """Check if RVC is installed and usable."""
+    try:
+        result = subprocess.run(
+            ["bash", "-c", f"source {CONDA_ACTIVATE_PATH} && conda activate {CONDA_ENV_NAME} && python -c 'from rvc_python.infer import RVCInference; print(\"ok\")'"],
+            capture_output=True, text=True, timeout=30,
+        )
+        return result.returncode == 0 and "ok" in result.stdout
+    except Exception:
+        return False
+
+
+def list_rvc_models():
+    """List available RVC voice models."""
+    models = []
+    if not os.path.isdir(BASE_RVC_MODELS_DIR):
+        return models
+    for name in os.listdir(BASE_RVC_MODELS_DIR):
+        model_dir = os.path.join(BASE_RVC_MODELS_DIR, name)
+        if not os.path.isdir(model_dir):
+            continue
+        pth_files = glob.glob(os.path.join(model_dir, "*.pth"))
+        index_files = glob.glob(os.path.join(model_dir, "*.index"))
+        if pth_files:
+            models.append({
+                "id": name,
+                "pth": pth_files[0],
+                "index": index_files[0] if index_files else None,
+            })
+    return models
+
+
+def run_rvc(input_path, output_path, model_info, f0_method="rmvpe", f0_up_key=0, pp_job=None):
+    """Run RVC voice conversion on a vocal track."""
+    pth_path = model_info["pth"]
+    index_path = model_info.get("index", "")
+
+    rvc_script = f"""
+import sys
+sys.path.insert(0, '/workspace')
+from rvc_python.infer import RVCInference
+rvc = RVCInference(device="cuda:0")
+rvc.load_model("{pth_path}")
+rvc.infer_file("{input_path}", "{output_path}")
+print("RVC_DONE")
+"""
+    script_path = f"/tmp/rvc_run_{os.getpid()}.py"
+    with open(script_path, "w") as f:
+        f.write(rvc_script)
+
+    cmd = f"source {CONDA_ACTIVATE_PATH} && conda activate {CONDA_ENV_NAME} && python {script_path}"
+    try:
+        proc = subprocess.run(
+            ["bash", "-c", cmd],
+            capture_output=True, text=True, timeout=300,
+        )
+        if pp_job:
+            pp_job.logs += proc.stdout + proc.stderr
+        if proc.returncode != 0 or "RVC_DONE" not in proc.stdout:
+            raise RuntimeError(f"RVC failed: {proc.stderr[-500:]}")
+        return True
+    finally:
+        try:
+            os.remove(script_path)
+        except:
+            pass
+
+
+def run_mastering(input_path, output_path, pp_job=None):
+    """Apply mastering chain using ffmpeg: high-pass, compression, loudness normalization, limiting."""
+    log_msg = f"[mastering] Processing {input_path}\n"
+    if pp_job:
+        pp_job.logs += log_msg
+    print(log_msg.strip())
+
+    temp_file = output_path + ".tmp.mp3"
+
+    cmd_pass1 = [
+        "ffmpeg", "-y", "-i", input_path,
+        "-af", (
+            "highpass=f=35,"
+            "acompressor=threshold=-20dB:ratio=3:attack=10:release=200:makeup=2dB,"
+            "loudnorm=I=-14:TP=-1:LRA=11:print_format=json"
+        ),
+        "-f", "null", "-"
+    ]
+
+    try:
+        r1 = subprocess.run(cmd_pass1, capture_output=True, text=True, timeout=120)
+        stderr = r1.stderr
+
+        measured_i = measured_tp = measured_lra = measured_thresh = None
+        import re as _re
+        m_i = _re.search(r'"input_i"\s*:\s*"([^"]+)"', stderr)
+        m_tp = _re.search(r'"input_tp"\s*:\s*"([^"]+)"', stderr)
+        m_lra = _re.search(r'"input_lra"\s*:\s*"([^"]+)"', stderr)
+        m_thresh = _re.search(r'"input_thresh"\s*:\s*"([^"]+)"', stderr)
+
+        if m_i and m_tp and m_lra and m_thresh:
+            measured_i = m_i.group(1)
+            measured_tp = m_tp.group(1)
+            measured_lra = m_lra.group(1)
+            measured_thresh = m_thresh.group(1)
+            loudnorm_filter = (
+                f"loudnorm=I=-14:TP=-1:LRA=11:"
+                f"measured_I={measured_i}:measured_TP={measured_tp}:"
+                f"measured_LRA={measured_lra}:measured_thresh={measured_thresh}:linear=true"
+            )
+        else:
+            loudnorm_filter = "loudnorm=I=-14:TP=-1:LRA=11"
+
+        cmd_pass2 = [
+            "ffmpeg", "-y", "-i", input_path,
+            "-af", (
+                f"highpass=f=35,"
+                f"acompressor=threshold=-20dB:ratio=3:attack=10:release=200:makeup=2dB,"
+                f"{loudnorm_filter},"
+                f"alimiter=limit=-1dB:level=false"
+            ),
+            "-ar", "44100",
+            "-b:a", "320k",
+            output_path,
+        ]
+
+        r2 = subprocess.run(cmd_pass2, capture_output=True, text=True, timeout=120)
+        if r2.returncode != 0:
+            raise RuntimeError(f"ffmpeg mastering failed: {r2.stderr[-500:]}")
+
+        log_done = f"[mastering] Mastered: {output_path}\n"
+        if pp_job:
+            pp_job.logs += log_done
+        print(log_done.strip())
+        return True
+
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Mastering timed out")
+
+
+def run_postprocess(pp_job):
+    """Full post-processing pipeline: RVC (optional) + mastering."""
+    pp_job.status = "IN_PROGRESS"
+    source_job_id = pp_job.source_job_id
+
+    try:
+        with jobs_lock:
+            source = jobs.get(source_job_id)
+        if not source:
+            raise RuntimeError(f"Source job {source_job_id} not found")
+        if source.status != "COMPLETED" or not source.output_files:
+            raise RuntimeError(f"Source job not completed or has no output files")
+
+        mix_path = source.output_files[0]
+        vtrack_path, itrack_path = find_stems_for_mix(mix_path)
+
+        basename = os.path.basename(mix_path).replace("_mixed.mp3", "")
+        pp_mix_path = os.path.join(PP_OUTPUTS_DIR, f"{basename}_pp_mixed.mp3")
+
+        rvc_applied = False
+        if pp_job.rvc_model and vtrack_path:
+            models = list_rvc_models()
+            model_info = next((m for m in models if m["id"] == pp_job.rvc_model), None)
+            if model_info:
+                pp_job.logs += f"[pp] Applying RVC with model: {pp_job.rvc_model}\n"
+                rvc_vtrack = os.path.join(PP_OUTPUTS_DIR, f"{basename}_rvc_vtrack.mp3")
+                run_rvc(vtrack_path, rvc_vtrack, model_info, pp_job=pp_job)
+                vtrack_path = rvc_vtrack
+                rvc_applied = True
+                pp_job.logs += "[pp] RVC completed\n"
+            else:
+                pp_job.logs += f"[pp] RVC model '{pp_job.rvc_model}' not found, skipping RVC\n"
+
+        if vtrack_path and itrack_path:
+            pp_job.logs += "[pp] Remixing vocal + instrumental tracks\n"
+            temp_remix = os.path.join(PP_OUTPUTS_DIR, f"{basename}_remix_temp.mp3")
+            remix_cmd = [
+                "ffmpeg", "-y",
+                "-i", vtrack_path,
+                "-i", itrack_path,
+                "-filter_complex",
+                "[0:a]volume=1.0[v];[1:a]volume=1.0[i];[v][i]amix=inputs=2:duration=longest:dropout_transition=2",
+                "-ar", "44100", "-b:a", "320k",
+                temp_remix,
+            ]
+            r = subprocess.run(remix_cmd, capture_output=True, text=True, timeout=120)
+            if r.returncode != 0:
+                raise RuntimeError(f"Remix failed: {r.stderr[-500:]}")
+
+            run_mastering(temp_remix, pp_mix_path, pp_job)
+            try:
+                os.remove(temp_remix)
+            except:
+                pass
+        else:
+            pp_job.logs += "[pp] Stems not found, mastering mixed file directly\n"
+            run_mastering(mix_path, pp_mix_path, pp_job)
+
+        pp_job.output_files = [pp_mix_path]
+        pp_job.status = "COMPLETED"
+        pp_job.completed_at = datetime.utcnow().isoformat()
+        pp_job.logs += f"[pp] Post-processing complete: {pp_mix_path}\n"
+
+    except Exception as e:
+        pp_job.status = "FAILED"
+        pp_job.error = str(e)
+        pp_job.logs += f"[pp] Error: {e}\n"
+        print(f"[pp:{pp_job.id}] Error: {e}")
+
+    print(f"[pp:{pp_job.id}] Final status: {pp_job.status}")
+
+
 def is_safe_path(file_path):
     real = os.path.realpath(file_path)
     return real.startswith(os.path.realpath(BASE_OUTPUTS_DIR))
@@ -280,7 +534,10 @@ class YuEHandler(BaseHTTPRequestHandler):
                     "stage1": os.path.exists(DEFAULT_STAGE1_MODEL),
                     "stage2": os.path.exists(DEFAULT_STAGE2_MODEL),
                 },
+                "rvc_models": list_rvc_models(),
+                "postprocessing": True,
                 "active_jobs": sum(1 for j in jobs.values() if j.status == "IN_PROGRESS"),
+                "active_pp_jobs": sum(1 for j in pp_jobs.values() if j.status == "IN_PROGRESS"),
                 "timestamp": datetime.utcnow().isoformat(),
             })
 
@@ -296,6 +553,15 @@ class YuEHandler(BaseHTTPRequestHandler):
                     })
             all_files.sort(key=lambda x: x["modified"], reverse=True)
             self.send_json({"files": all_files[:50]})
+
+        elif path.startswith("/pp/status/"):
+            pp_id = path[len("/pp/status/"):]
+            with pp_jobs_lock:
+                pp_job = pp_jobs.get(pp_id)
+            if not pp_job:
+                self.send_json({"error": "PP job not found"}, 404)
+            else:
+                self.send_json(pp_job.to_dict())
 
         elif path.startswith("/status/"):
             job_id = path[len("/status/"):]
@@ -342,8 +608,9 @@ class YuEHandler(BaseHTTPRequestHandler):
         else:
             self.send_json({"error": "Not found", "endpoints": [
                 "GET /health", "GET /files", "GET /jobs",
-                "GET /status/{job_id}", "GET /download/{file_path}",
-                "POST /generate", "POST /stop/{job_id}",
+                "GET /status/{job_id}", "GET /pp/status/{pp_id}",
+                "GET /download/{file_path}",
+                "POST /generate", "POST /postprocess", "POST /stop/{job_id}",
             ]}, 404)
 
     def do_POST(self):
@@ -385,6 +652,37 @@ class YuEHandler(BaseHTTPRequestHandler):
                 "job_id": job_id,
                 "status": "PENDING",
                 "message": "Generation started",
+            }, 201)
+
+        elif path == "/postprocess":
+            source_job_id = params.get("job_id")
+            rvc_model = params.get("rvc_model")
+
+            if not source_job_id:
+                self.send_json({"error": "Provide 'job_id' of a completed generation"}, 400)
+                return
+
+            with jobs_lock:
+                source = jobs.get(source_job_id)
+            if not source:
+                self.send_json({"error": f"Source job {source_job_id} not found"}, 404)
+                return
+            if source.status != "COMPLETED":
+                self.send_json({"error": f"Source job status is {source.status}, must be COMPLETED"}, 400)
+                return
+
+            pp_id = str(uuid.uuid4())
+            pp_job = PPJob(pp_id, source_job_id, rvc_model=rvc_model)
+            with pp_jobs_lock:
+                pp_jobs[pp_id] = pp_job
+
+            thread = threading.Thread(target=run_postprocess, args=(pp_job,), daemon=True)
+            thread.start()
+
+            self.send_json({
+                "pp_job_id": pp_id,
+                "status": "PENDING",
+                "message": "Post-processing started",
             }, 201)
 
         elif path.startswith("/stop/"):

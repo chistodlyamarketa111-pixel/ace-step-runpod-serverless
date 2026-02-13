@@ -294,18 +294,31 @@ export async function registerRoutes(
       const cmp = await storage.getComparison(req.params.id);
       if (!cmp) return res.status(404).json({ error: "Not found" });
 
-      if (req.params.source === "ours") {
-        const musicEngine = registry.get(cmp.engine);
-        if (!musicEngine) {
-          return res.status(500).json({ error: `Engine ${cmp.engine} not found` });
+      const source = req.params.source;
+
+      if (source === "ours" || source === "ours_pp") {
+        const audioUrl = source === "ours_pp" ? cmp.ourPpAudioUrl : cmp.ourAudioUrl;
+        if (!audioUrl) {
+          return res.status(404).json({ error: `No ${source} audio available` });
         }
 
-        const result = await musicEngine.fetchAudio(cmp.ourAudioUrl!);
+        const engineId = source === "ours_pp" ? "yue-pp" : cmp.engine;
+        const musicEngine = registry.get(engineId) || registry.get(cmp.engine);
+        if (!musicEngine) {
+          return res.status(500).json({ error: `Engine ${engineId} not found` });
+        }
+
+        const result = await musicEngine.fetchAudio(audioUrl);
         res.setHeader("Content-Type", result.contentType);
         res.send(result.buffer);
-      } else {
+      } else if (source === "suno") {
+        if (!cmp.sunoAudioUrl) {
+          return res.status(404).json({ error: "No Suno audio available" });
+        }
         res.setHeader("Content-Type", "audio/mpeg");
-        res.send(await suno.downloadAudio(cmp.sunoAudioUrl!));
+        res.send(await suno.downloadAudio(cmp.sunoAudioUrl));
+      } else {
+        return res.status(400).json({ error: `Unknown source: ${source}` });
       }
     },
   );

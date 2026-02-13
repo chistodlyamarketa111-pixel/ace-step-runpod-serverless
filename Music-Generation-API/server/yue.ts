@@ -224,6 +224,131 @@ export async function getPodDiagnostics(): Promise<Record<string, any>> {
   return diagnostics;
 }
 
+// ===== POST-PROCESSING (YuE+PP) =====
+
+const ppStateMap = new Map<string, {
+  phase: "generating" | "postprocessing";
+  genJobId: string;
+  ppJobId?: string;
+}>();
+
+export async function submitTaskWithPP(params: {
+  prompt: string;
+  lyrics?: string;
+  duration?: number;
+  style?: string;
+  genre?: string;
+  seed?: number;
+  num_segments?: number;
+}): Promise<{ task_id: string }> {
+  const genResult = await submitTask(params);
+  const genJobId = genResult.task_id;
+  const ppTaskId = `yuepp_${genJobId}`;
+
+  ppStateMap.set(ppTaskId, {
+    phase: "generating",
+    genJobId,
+  });
+
+  log(`YuE+PP submit: generation started as ${genJobId}, tracking as ${ppTaskId}`, "yue-pp");
+  return { task_id: ppTaskId };
+}
+
+export async function queryTaskStatusPP(taskId: string): Promise<{
+  status: string;
+  audio_path?: string;
+  error?: string;
+  logs?: string;
+}> {
+  if (!isConfigured()) {
+    return { status: "FAILED", error: "YuE not configured" };
+  }
+
+  const state = ppStateMap.get(taskId);
+  if (!state) {
+    return { status: "FAILED", error: "PP task not found" };
+  }
+
+  if (state.phase === "generating") {
+    const genStatus = await queryTaskStatus(state.genJobId);
+
+    if (genStatus.status === "COMPLETED") {
+      log(`YuE+PP: generation complete, starting post-processing`, "yue-pp");
+      state.phase = "postprocessing";
+
+      const rawJobId = state.genJobId.startsWith("yue_") ? state.genJobId.slice(4) : state.genJobId;
+
+      try {
+        const response = await fetch(`${getBaseUrl()}/postprocess`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            job_id: rawJobId,
+          }),
+          signal: AbortSignal.timeout(30000),
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          return { status: "FAILED", error: `Post-processing start failed: ${text}` };
+        }
+
+        const ppResult = await response.json() as any;
+        state.ppJobId = ppResult.pp_job_id;
+        log(`YuE+PP: post-processing started as ${state.ppJobId}`, "yue-pp");
+
+        return { status: "IN_PROGRESS", logs: "Generation complete. Post-processing in progress..." };
+      } catch (e: any) {
+        return { status: "FAILED", error: `Failed to start post-processing: ${e.message}` };
+      }
+    }
+
+    if (genStatus.status === "FAILED") {
+      return { status: "FAILED", error: genStatus.error, logs: genStatus.logs };
+    }
+
+    return { status: "IN_PROGRESS", logs: genStatus.logs };
+  }
+
+  if (state.phase === "postprocessing" && state.ppJobId) {
+    try {
+      const response = await fetch(`${getBaseUrl()}/pp/status/${state.ppJobId}`, {
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!response.ok) {
+        return { status: "IN_PROGRESS", logs: "Checking post-processing status..." };
+      }
+
+      const data = await response.json() as any;
+
+      if (data.status === "COMPLETED" && data.output_files?.length > 0) {
+        ppStateMap.delete(taskId);
+        return {
+          status: "COMPLETED",
+          audio_path: data.output_files[0],
+          logs: data.logs,
+        };
+      }
+
+      if (data.status === "FAILED") {
+        ppStateMap.delete(taskId);
+        return {
+          status: "FAILED",
+          error: data.error || "Post-processing failed",
+          logs: data.logs,
+        };
+      }
+
+      return { status: "IN_PROGRESS", logs: data.logs || "Post-processing in progress..." };
+    } catch (e: any) {
+      return { status: "IN_PROGRESS", logs: `PP status check unavailable: ${e.message}` };
+    }
+  }
+
+  return { status: "IN_PROGRESS" };
+}
+
 function buildDefaultLyrics(prompt: string): string {
   return `[verse]\n${prompt}\n\n[chorus]\n${prompt}`;
 }

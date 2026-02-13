@@ -157,6 +157,22 @@ function EngineBadge({ engine }: { engine: string }) {
       </Badge>
     );
   }
+  if (engine === "yue") {
+    return (
+      <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20">
+        <Music className="w-3 h-3 mr-1" />
+        YuE
+      </Badge>
+    );
+  }
+  if (engine === "yue-pp") {
+    return (
+      <Badge variant="outline" className="text-xs bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20">
+        <Wand2 className="w-3 h-3 mr-1" />
+        YuE + PP
+      </Badge>
+    );
+  }
   return (
     <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20">
       <Guitar className="w-3 h-3 mr-1" />
@@ -427,6 +443,7 @@ function PlaygroundTab() {
 
   const selectedEngine = useWatch({ control: form.control, name: "engine" });
   const isHeartMuLa = selectedEngine === "heartmula";
+  const isYuE = selectedEngine === "yue" || selectedEngine === "yue-pp";
 
   const mutation = useMutation({
     mutationFn: async (data: PlaygroundFormValues) => {
@@ -522,6 +539,38 @@ function PlaygroundTab() {
                       <div className="text-xs text-muted-foreground">Full songs with vocals</div>
                     </div>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => field.onChange("yue")}
+                    className={`flex items-center gap-2 p-3 rounded-md border text-left transition-colors ${
+                      field.value === "yue"
+                        ? "border-purple-500 bg-purple-500/10"
+                        : "border-border hover-elevate"
+                    }`}
+                    data-testid="button-engine-yue"
+                  >
+                    <Music className={`w-5 h-5 ${field.value === "yue" ? "text-purple-500" : "text-muted-foreground"}`} />
+                    <div>
+                      <div className="text-sm font-medium">YuE</div>
+                      <div className="text-xs text-muted-foreground">Lyrics to song</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => field.onChange("yue-pp")}
+                    className={`flex items-center gap-2 p-3 rounded-md border text-left transition-colors ${
+                      field.value === "yue-pp"
+                        ? "border-green-500 bg-green-500/10"
+                        : "border-border hover-elevate"
+                    }`}
+                    data-testid="button-engine-yue-pp"
+                  >
+                    <Wand2 className={`w-5 h-5 ${field.value === "yue-pp" ? "text-green-500" : "text-muted-foreground"}`} />
+                    <div>
+                      <div className="text-sm font-medium">YuE + PP</div>
+                      <div className="text-xs text-muted-foreground">Lyrics to mastered song</div>
+                    </div>
+                  </button>
                 </div>
                 <FormMessage />
               </FormItem>
@@ -538,7 +587,9 @@ function PlaygroundTab() {
                   <Textarea
                     placeholder={isHeartMuLa
                       ? "Describe the song: mood, genre, vocal style, instrumentation..."
-                      : "Describe the music: genre, instruments, mood, tempo feel..."
+                      : isYuE
+                        ? "Describe the song style: genre tags like 'pop rock, female vocal, upbeat'..."
+                        : "Describe the music: genre, instruments, mood, tempo feel..."
                     }
                     className="resize-none min-h-[100px]"
                     data-testid="input-prompt"
@@ -561,7 +612,7 @@ function PlaygroundTab() {
             name="lyrics"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Lyrics {isHeartMuLa ? "(recommended)" : "(optional)"}</FormLabel>
+                <FormLabel>Lyrics {isYuE ? "(required for YuE)" : isHeartMuLa ? "(recommended)" : "(optional)"}</FormLabel>
                 <FormControl>
                   <Textarea
                     placeholder={"[Verse 1]\nYour lyrics here...\n\n[Chorus]\nChorus lyrics..."}
@@ -1608,7 +1659,7 @@ function AdminTab() {
 }
 
 const compareFormSchema = z.object({
-  engine: z.enum(["ace-step", "heartmula"]).default("heartmula"),
+  engine: z.enum(["ace-step", "heartmula", "yue"]).default("yue"),
   prompt: z.string().min(1, "Prompt is required"),
   lyrics: z.string().optional().default(""),
   tags: z.string().optional().default(""),
@@ -1616,6 +1667,7 @@ const compareFormSchema = z.object({
   title: z.string().optional().default(""),
   duration: z.number().min(10).max(300).default(30),
   sunoModel: z.enum(["V5", "V4_5ALL", "V4_5PLUS", "V4_5", "V4"]).default("V5"),
+  enablePP: z.boolean().default(true),
 });
 
 function CompareTab() {
@@ -1625,7 +1677,7 @@ function CompareTab() {
   const compareForm = useForm<z.infer<typeof compareFormSchema>>({
     resolver: zodResolver(compareFormSchema),
     defaultValues: {
-      engine: "heartmula",
+      engine: "yue",
       prompt: "",
       lyrics: "",
       tags: "",
@@ -1633,6 +1685,7 @@ function CompareTab() {
       title: "",
       duration: 30,
       sunoModel: "V5",
+      enablePP: true,
     },
   });
 
@@ -1726,11 +1779,27 @@ function CompareTab() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="yue">YuE (Lyrics-to-Song)</SelectItem>
                   <SelectItem value="heartmula">HeartMuLa</SelectItem>
                   <SelectItem value="ace-step">ACE-Step</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {compareForm.watch("engine") === "yue" && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="enablePP"
+                  checked={compareForm.watch("enablePP")}
+                  onChange={(e) => compareForm.setValue("enablePP", e.target.checked)}
+                  className="rounded border-input"
+                />
+                <label htmlFor="enablePP" className="text-xs font-medium cursor-pointer">
+                  Include YuE+PP (Post-Processing: mastering + RVC)
+                </label>
+              </div>
+            )}
 
             <div>
               <label className="text-xs font-medium mb-1 block">Suno Model</label>
@@ -1819,7 +1888,9 @@ function CompareTab() {
               ) : (
                 <Zap className="w-4 h-4 mr-2" />
               )}
-              Start A/B Comparison
+              {compareForm.watch("enablePP") && compareForm.watch("engine") === "yue"
+                ? "Start 3-Way Comparison"
+                : "Start A/B Comparison"}
             </Button>
           </form>
         </Card>
@@ -1929,8 +2000,8 @@ function ComparisonResult({ comparison }: { comparison: any }) {
           <Loader2 className="w-8 h-8 animate-spin mx-auto text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
             {isAnalyzing
-              ? "Both tracks generated. Gemini is analyzing..."
-              : `Generating tracks... Our: ${comparison.ourStatus} | Suno: ${comparison.sunoStatus}`}
+              ? "All tracks generated. Gemini is analyzing..."
+              : `Generating tracks... Our: ${comparison.ourStatus} | Suno: ${comparison.sunoStatus}${comparison.ourPpStatus ? ` | PP: ${comparison.ourPpStatus}` : ''}`}
           </p>
         </div>
       )}
@@ -1944,11 +2015,11 @@ function ComparisonResult({ comparison }: { comparison: any }) {
 
       {isComplete && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className={`grid grid-cols-1 ${comparison.ourPpAudioUrl ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4`}>
             <Card className="p-4">
               <div className="flex items-center gap-2 mb-3">
                 <EngineBadge engine={comparison.engine} />
-                <span className="text-xs text-muted-foreground">Our Engine</span>
+                <span className="text-xs text-muted-foreground">Raw</span>
                 {analysis && (
                   <Badge variant="outline" className="ml-auto text-xs">
                     {analysis.overallScore.ours}/10
@@ -1962,6 +2033,29 @@ function ComparisonResult({ comparison }: { comparison: any }) {
                 data-testid="audio-ours"
               />
             </Card>
+
+            {comparison.ourPpAudioUrl && (
+              <Card className="p-4 border-green-500/30 bg-green-500/5">
+                <div className="flex items-center gap-2 mb-3">
+                  <Badge variant="outline" className="text-xs bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20">
+                    <Wand2 className="w-3 h-3 mr-1" />
+                    {comparison.engine === "yue" ? "YuE" : comparison.engine} + PP
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">Mastered</span>
+                  {analysis?.overallScore?.oursPP && (
+                    <Badge variant="outline" className="ml-auto text-xs">
+                      {analysis.overallScore.oursPP}/10
+                    </Badge>
+                  )}
+                </div>
+                <audio
+                  controls
+                  className="w-full"
+                  src={`/api/comparisons/${comparison.id}/audio/ours_pp`}
+                  data-testid="audio-ours-pp"
+                />
+              </Card>
+            )}
 
             <Card className="p-4">
               <div className="flex items-center gap-2 mb-3">
@@ -2080,7 +2174,7 @@ export default function Home() {
             </div>
             <div>
               <h1 className="text-sm font-semibold leading-tight">Music Gen API</h1>
-              <p className="text-xs text-muted-foreground leading-tight">ACE-Step + HeartMuLa</p>
+              <p className="text-xs text-muted-foreground leading-tight">Multi-Engine</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -2095,16 +2189,17 @@ export default function Home() {
             Music Generation API
           </h2>
           <p className="text-muted-foreground max-w-2xl">
-            Generate music using ACE-Step v1.5 (instrumental & vocal tracks) or HeartMuLa (full songs with vocals up to 5 minutes).
-            Both engines run on RunPod GPU infrastructure.
+            Generate music using ACE-Step v1.5, HeartMuLa, or YuE (lyrics-to-song with optional post-processing).
+            All engines run on RunPod GPU infrastructure.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           {[
             { icon: Guitar, title: "ACE-Step v1.5", desc: "Fine-grained DiT music generation", color: "text-blue-500 dark:text-blue-400" },
             { icon: Mic, title: "HeartMuLa", desc: "Full songs with vocals & lyrics", color: "text-pink-500 dark:text-pink-400" },
-            { icon: Zap, title: "GPU-Accelerated", desc: "RunPod A100/RTX inference", color: "text-amber-500 dark:text-amber-400" },
+            { icon: Music, title: "YuE", desc: "Lyrics-to-song generation", color: "text-purple-500 dark:text-purple-400" },
+            { icon: Zap, title: "GPU-Accelerated", desc: "RunPod RTX 4090 inference", color: "text-amber-500 dark:text-amber-400" },
           ].map((f) => (
             <Card key={f.title} className="p-4">
               <f.icon className={`w-5 h-5 ${f.color} mb-2`} />

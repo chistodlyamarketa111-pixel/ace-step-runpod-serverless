@@ -98,6 +98,9 @@ export const comparisons = pgTable("comparisons", {
   ourAudioUrl: text("our_audio_url"),
   sunoAudioUrl: text("suno_audio_url"),
   sunoModel: text("suno_model").default("V5"),
+  ourPpJobId: text("our_pp_job_id"),
+  ourPpStatus: text("our_pp_status"),
+  ourPpAudioUrl: text("our_pp_audio_url"),
   geminiAnalysis: jsonb("gemini_analysis"),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -113,6 +116,9 @@ export const insertComparisonSchema = createInsertSchema(comparisons).omit({
   sunoStatus: true,
   ourAudioUrl: true,
   sunoAudioUrl: true,
+  ourPpJobId: true,
+  ourPpStatus: true,
+  ourPpAudioUrl: true,
   geminiAnalysis: true,
   errorMessage: true,
   createdAt: true,
@@ -128,6 +134,7 @@ export const createComparisonSchema = z.object({
   title: z.string().optional(),
   duration: z.number().min(10).max(300).default(30),
   sunoModel: z.enum(["V5", "V4_5ALL", "V4_5PLUS", "V4_5", "V4"]).default("V5"),
+  enablePP: z.boolean().default(false),
   inputParams: z.record(z.any()).optional(),
 });
 
