@@ -96,9 +96,14 @@ export async function queryTaskStatus(taskId: string): Promise<{
     const data = await response.json() as any;
 
     if (data.status === "COMPLETED" && data.output_files?.length > 0) {
+      const files: string[] = data.output_files;
+      const mixedFile = files.find((f: string) => {
+        const name = f.toLowerCase();
+        return name.includes("mixed") || name.includes("/mix/");
+      });
       return {
         status: "COMPLETED",
-        audio_path: data.output_files[0],
+        audio_path: mixedFile || files[0],
         logs: data.logs,
       };
     }
