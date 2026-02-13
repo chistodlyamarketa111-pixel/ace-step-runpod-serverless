@@ -129,6 +129,7 @@ def run_job(job):
     xcodec_dir = os.path.join(infer_dir, "xcodec_mini_infer")
     existing_pythonpath = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = f"{xcodec_dir}:{infer_dir}:{BASE_YUE_DIR}:{existing_pythonpath}".rstrip(":")
+    env["TORCH_FORCE_WEIGHTS_ONLY_LOAD"] = "0"
 
     if use_conda:
         quoted = " ".join(shlex.quote(a) for a in argv)
