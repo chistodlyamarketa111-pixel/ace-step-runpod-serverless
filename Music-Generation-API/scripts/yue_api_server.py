@@ -129,6 +129,8 @@ def run_job(job):
     env = os.environ.copy()
 
 
+    infer_dir = os.path.join(BASE_YUE_DIR, "inference")
+
     if use_conda:
         quoted = " ".join(shlex.quote(a) for a in argv)
         shell_cmd = f"source {CONDA_ACTIVATE_PATH} && conda activate {CONDA_ENV_NAME} && {quoted}"
@@ -138,7 +140,7 @@ def run_job(job):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             preexec_fn=os.setsid,
-            cwd=BASE_YUE_DIR,
+            cwd=infer_dir,
             env=env,
         )
     else:
@@ -148,7 +150,7 @@ def run_job(job):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             preexec_fn=os.setsid,
-            cwd=BASE_YUE_DIR,
+            cwd=infer_dir,
             env=env,
         )
 
