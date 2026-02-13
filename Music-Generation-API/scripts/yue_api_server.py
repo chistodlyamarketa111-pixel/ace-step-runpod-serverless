@@ -215,6 +215,10 @@ def run_job(job):
                 found = find_output_files(job)
                 job.output_files = found
 
+            mix_path = try_create_mix(job)
+            if mix_path:
+                job.output_files.insert(0, mix_path)
+
             if job.output_files:
                 job.status = "COMPLETED"
                 job.completed_at = datetime.utcnow().isoformat()
@@ -234,6 +238,65 @@ def run_job(job):
             pass
 
     print(f"[{job.id}] Final status: {job.status}, files: {job.output_files}")
+
+
+def try_create_mix(job):
+    vtrack = None
+    itrack = None
+    for f in job.output_files:
+        fname = os.path.basename(f).lower()
+        if "vtrack" in fname or "vocal" in fname:
+            vtrack = f
+        elif "itrack" in fname or "instrumental" in fname or "inst" in fname:
+            itrack = f
+
+    if not vtrack and not itrack:
+        for ext in ["*.mp3", "*.wav"]:
+            for root, dirs, files_list in os.walk(BASE_OUTPUTS_DIR):
+                for fn in files_list:
+                    if not fn.endswith(ext.replace("*", "")):
+                        continue
+                    full = os.path.join(root, fn)
+                    if os.path.getmtime(full) < time.time() - 1800:
+                        continue
+                    fl = fn.lower()
+                    if "vtrack" in fl or "vocal" in fl:
+                        vtrack = full
+                    elif "itrack" in fl or "instrumental" in fl or "inst" in fl:
+                        itrack = full
+
+    if not vtrack or not itrack:
+        print(f"[{job.id}] Cannot create mix: vtrack={vtrack}, itrack={itrack}")
+        return None
+
+    for f in job.output_files:
+        if "mix" in os.path.basename(f).lower():
+            print(f"[{job.id}] Mix already exists: {f}")
+            return None
+
+    mix_dir = os.path.dirname(vtrack)
+    mix_path = os.path.join(mix_dir, "mixed.mp3")
+
+    try:
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", vtrack,
+            "-i", itrack,
+            "-filter_complex", "amix=inputs=2:duration=longest:normalize=0",
+            "-b:a", "320k",
+            mix_path
+        ]
+        print(f"[{job.id}] Creating mix: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode == 0 and os.path.exists(mix_path):
+            print(f"[{job.id}] Mix created: {mix_path}")
+            return mix_path
+        else:
+            print(f"[{job.id}] ffmpeg mix failed: {result.stderr[:500]}")
+            return None
+    except Exception as e:
+        print(f"[{job.id}] Mix creation error: {e}")
+        return None
 
 
 def find_output_files(job):
