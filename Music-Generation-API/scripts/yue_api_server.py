@@ -533,10 +533,10 @@ class YuEHandler(BaseHTTPRequestHandler):
             self.send_json({
                 "status": "ok",
                 "server": "yue-api",
-                "gpu_available": os.path.exists("/dev/nvidia0"),
+                "gpu_available": HAS_GPU,
                 "models": {
-                    "stage1": os.path.exists(DEFAULT_STAGE1_MODEL),
-                    "stage2": os.path.exists(DEFAULT_STAGE2_MODEL),
+                    "stage1": DEFAULT_STAGE1_MODEL,
+                    "stage2": DEFAULT_STAGE2_MODEL,
                 },
                 "rvc_models": list_rvc_models(),
                 "postprocessing": True,
