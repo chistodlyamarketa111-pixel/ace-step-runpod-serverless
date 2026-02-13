@@ -37,7 +37,10 @@ The system uses a **registry-based engine pattern** for extensibility:
 - **Current engines**:
   - **ACE-Step v1.5** (`server/engines/ace-step.ts` → delegates to `server/runpod.ts`): Instrumental/vocal generation with DiT controls, up to 600s duration
   - **HeartMuLa** (`server/engines/heartmula.ts` → delegates to `server/heartmula.ts`): Full song generation with vocals & lyrics, up to 300s
+  - **YuE** (`server/engines/yue.ts` → delegates to `server/yue.ts`): Lyrics-to-song generation using open-source YuE model on RunPod RTX 4090
+  - **YuE + Post-Processing** (`server/engines/yue-pp.ts`): Chains YuE generation with post-processing (RVC voice conversion + ffmpeg mastering: loudness normalization, EQ, compression, limiting). Uses state machine to track generation→postprocessing phases
 - To add a new engine: create a class implementing `MusicEngine`, register it in `initializeEngines()`
+- **Post-processing pipeline**: `/postprocess` endpoint on YuE pod accepts completed job ID, optionally applies RVC voice conversion, then runs mastering chain via ffmpeg. Install script: `scripts/install_rvc_runpod.sh`
 
 ### Database
 - **Database**: PostgreSQL
@@ -49,7 +52,7 @@ The system uses a **registry-based engine pattern** for extensibility:
 
 ### Key Database Tables
 - **jobs**: Tracks music generation jobs (id, engine, status, prompt, lyrics, duration, style, progress, output URL, etc.)
-- **comparisons**: A/B comparison records between our engines and Suno
+- **comparisons**: A/B or 3-way comparison records between our engines and Suno (supports optional post-processing track via `ourPpJobId`, `ourPpStatus`, `ourPpAudioUrl`, `enablePP` fields)
 - **users**: Basic user table
 - **conversations/messages**: Chat integration tables (from Replit AI integrations)
 
@@ -60,8 +63,8 @@ All endpoints are prefixed with `/api/`. Key routes:
 - `POST /api/generate` — Submit a music generation job (requires Bearer auth)
 - `GET /api/jobs` / `GET /api/jobs/:id` — List/get job status (polls engine APIs)
 - `GET /api/jobs/:id/audio` — Download generated audio (proxied from engine pod)
-- `POST /api/compare` — Start A/B comparison (our engine vs Suno, analyzed by Gemini)
-- `GET /api/comparisons` / `GET /api/comparisons/:id` — Comparison results
+- `POST /api/compare` — Start A/B or 3-way comparison (our engine vs Suno, optionally with post-processing, analyzed by Gemini)
+- `GET /api/comparisons` / `GET /api/comparisons/:id` — Comparison results (supports `enablePP` flag for 3-way)
 - `POST /api/generate-song-idea` — Gemini generates random song ideas
 
 ## External Dependencies
@@ -70,6 +73,7 @@ All endpoints are prefixed with `/api/`. Key routes:
 - Music generation models run on persistent RunPod pods accessed via proxy URLs (`https://{POD_ID}-8000.proxy.runpod.net`)
 - **ACE-Step Pod** (`RUNPOD_POD_ID` env var): Docker image `valyriantech/ace-step-1.5:latest`
 - **HeartMuLa Pod** (`HEARTMULA_POD_ID` env var): Docker image `ambsd/heartmula-studio:latest`
+- **YuE Pod** (`YUE_POD_ID` env var): Custom Python API server (`scripts/yue_api_server.py`) running YuE model with post-processing support
 - Deployment scripts in `scripts/deploy-runpod.ts` and `scripts/deploy-heartmula.ts` use RunPod REST API (`RUNPOD_API_KEY`)
 
 ### Suno API
@@ -93,8 +97,12 @@ All endpoints are prefixed with `/api/`. Key routes:
 - `DATABASE_URL` — PostgreSQL connection string
 - `RUNPOD_POD_ID` — ACE-Step pod identifier
 - `HEARTMULA_POD_ID` — HeartMuLa pod identifier
+- `YUE_POD_ID` — YuE pod identifier
 - `RUNPOD_API_KEY` — RunPod API key for pod management
 - `API_BEARER_TOKEN` — Bearer token for API authentication
 - `SUNO_API_KEY` — Suno API key for comparisons
 - `AI_INTEGRATIONS_GEMINI_API_KEY` — Gemini API key
 - `AI_INTEGRATIONS_GEMINI_BASE_URL` — Gemini API base URL
+
+## Recent Changes
+- **2026-02-13**: Added YuE and YuE+PP engines to frontend (Playground engine selector, hero section, EngineBadge component). Updated comparison UI for 3-way layout (Suno vs YuE raw vs YuE+PP). Added enablePP checkbox to comparison form. Updated header and descriptions to reflect multi-engine architecture.
