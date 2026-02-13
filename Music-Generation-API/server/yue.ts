@@ -1,7 +1,7 @@
 import { log } from "./index";
 
 const YUE_POD_ID = process.env.YUE_POD_ID;
-const YUE_API_PORT = process.env.YUE_API_PORT || "7860";
+const YUE_API_PORT = process.env.YUE_API_PORT || "8000";
 
 if (!YUE_POD_ID) {
   console.warn("YUE_POD_ID not set - YuE integration will not work");
