@@ -30,7 +30,8 @@ export async function submitTask(params: {
 
   const lyricsText = params.lyrics?.trim() || buildDefaultLyrics(params.prompt);
   const genreText = params.genre || params.style || params.prompt;
-  const numSegments = params.num_segments || 2;
+  const duration = params.duration || 60;
+  const numSegments = params.num_segments || Math.max(2, Math.ceil(duration / 30));
   const seed = params.seed ?? 42;
 
   const customFilename = `yue${Date.now().toString(36)}`;
@@ -43,6 +44,7 @@ export async function submitTask(params: {
       genre: genreText,
       lyrics: lyricsText,
       num_segments: numSegments,
+      duration,
       seed,
       max_new_tokens: 3000,
       custom_filename: customFilename,

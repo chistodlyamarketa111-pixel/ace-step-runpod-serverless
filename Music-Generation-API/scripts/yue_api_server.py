@@ -85,7 +85,10 @@ def build_argv(job):
     p = job.params
     genre = p.get("genre", p.get("style", "pop"))
     lyrics = p.get("lyrics", "[verse]\nLa la la\n\n[chorus]\nLa la la")
-    num_segments = p.get("num_segments", 2)
+    duration = p.get("duration", 60)
+    num_segments = p.get("num_segments", None)
+    if num_segments is None:
+        num_segments = max(2, -(-duration // 30))
     seed = p.get("seed", 42)
     max_new_tokens = p.get("max_new_tokens", 3000)
     stage1_model = p.get("stage1_model", DEFAULT_STAGE1_MODEL)
@@ -250,6 +253,17 @@ def find_output_files(job):
 
     if len(files) > 5:
         files = files[:5]
+
+    def priority(path):
+        name = os.path.basename(path).lower()
+        if "mixed" in name or "mix" in name:
+            return 0
+        if "itrack" in name or "instrumental" in name:
+            return 2
+        if "vtrack" in name or "vocal" in name:
+            return 3
+        return 1
+    files.sort(key=priority)
 
     return files
 
