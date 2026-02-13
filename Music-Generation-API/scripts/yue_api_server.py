@@ -114,9 +114,6 @@ def build_argv(job):
         "--repetition_penalty", "1.1",
     ]
 
-    if custom_filename.strip():
-        argv.extend(["--custom_filename", custom_filename])
-
     return argv, genre_file, lyrics_file
 
 
@@ -167,12 +164,18 @@ def run_job(job):
             sys.stdout.write(f"[{job.id[:8]}] {decoded}")
             sys.stdout.flush()
 
-            match = re.search(r"Created mix:\s*(.+\.mp3)", decoded)
-            if match:
-                audio_path = match.group(1).strip()
-                if audio_path not in job.output_files:
-                    job.output_files.append(audio_path)
-                    print(f"[{job.id}] Output found: {audio_path}")
+            for pattern in [
+                r"Created mix:\s*(.+\.mp3)",
+                r"saved to[:\s]+(.+\.(?:mp3|wav))",
+                r"output[:\s]+(.+\.(?:mp3|wav))",
+                r"(/workspace/outputs/[^\s]+\.(?:mp3|wav))",
+            ]:
+                match = re.search(pattern, decoded, re.IGNORECASE)
+                if match:
+                    audio_path = match.group(1).strip()
+                    if audio_path not in job.output_files and os.path.exists(audio_path):
+                        job.output_files.append(audio_path)
+                        print(f"[{job.id}] Output found: {audio_path}")
 
         proc.stdout.close()
         ret = proc.wait()
@@ -211,23 +214,21 @@ def run_job(job):
 
 def find_output_files(job):
     files = []
-    cf = job.custom_filename
-    if cf:
-        pattern = os.path.join(BASE_OUTPUTS_DIR, f"{cf}_*_mixed.mp3")
-        found = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
-        files.extend(found)
+    cutoff = time.time() - 1800
 
-    if not files:
-        all_mixed = sorted(
-            glob.glob(os.path.join(BASE_OUTPUTS_DIR, "*_mixed.mp3")),
-            key=os.path.getmtime,
-            reverse=True,
-        )
-        cutoff = time.time() - 900
-        for f in all_mixed:
-            if os.path.getmtime(f) > cutoff:
-                files.append(f)
-                break
+    for ext in ["*.mp3", "*.wav"]:
+        for pattern_dir in [BASE_OUTPUTS_DIR, os.path.join(BASE_OUTPUTS_DIR, "**")]:
+            found = sorted(
+                glob.glob(os.path.join(pattern_dir, ext), recursive=True),
+                key=os.path.getmtime,
+                reverse=True,
+            )
+            for f in found:
+                if os.path.getmtime(f) > cutoff and f not in files:
+                    files.append(f)
+
+    if len(files) > 5:
+        files = files[:5]
 
     return files
 
