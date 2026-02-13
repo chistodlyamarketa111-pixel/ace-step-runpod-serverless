@@ -99,8 +99,23 @@ def build_argv(job):
     with open(lyrics_file, "w") as f:
         f.write(lyrics)
 
+    wrapper_path = os.path.join(BASE_OUTPUTS_DIR, "_torch_patch_wrapper.py")
+    with open(wrapper_path, "w") as wf:
+        wf.write(
+            "import torch, functools\n"
+            "_orig = torch.load\n"
+            "@functools.wraps(_orig)\n"
+            "def _patched(*a, **kw):\n"
+            "    kw['weights_only'] = False\n"
+            "    return _orig(*a, **kw)\n"
+            "torch.load = _patched\n"
+            "import sys, runpy\n"
+            f"sys.argv = sys.argv  # already set by caller\n"
+            f"runpy.run_path('{BASE_YUE_DIR}/inference/infer.py', run_name='__main__')\n"
+        )
+
     argv = [
-        "python", "-u", f"{BASE_YUE_DIR}/inference/infer.py",
+        "python", "-u", wrapper_path,
         "--stage1_model", stage1_model,
         "--stage2_model", stage2_model,
         "--genre_txt", genre_file,
