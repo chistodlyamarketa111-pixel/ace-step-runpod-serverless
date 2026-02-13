@@ -129,8 +129,9 @@ def run_job(job):
     env = os.environ.copy()
 
     infer_dir = os.path.join(BASE_YUE_DIR, "inference")
+    xcodec_dir = os.path.join(infer_dir, "xcodec_mini_infer")
     existing_pythonpath = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = f"{infer_dir}:{BASE_YUE_DIR}:{existing_pythonpath}".rstrip(":")
+    env["PYTHONPATH"] = f"{xcodec_dir}:{infer_dir}:{BASE_YUE_DIR}:{existing_pythonpath}".rstrip(":")
 
     if use_conda:
         quoted = " ".join(shlex.quote(a) for a in argv)
