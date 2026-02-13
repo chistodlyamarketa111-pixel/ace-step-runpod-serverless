@@ -21,16 +21,31 @@ from urllib.parse import urlparse, unquote
 from datetime import datetime
 
 PORT = int(os.environ.get("YUE_API_PORT", "8000"))
-BASE_YUE_DIR = "/workspace/YuE-exllamav2-UI/src/yue"
-BASE_MODELS_DIR = "/workspace/models"
-BASE_OUTPUTS_DIR = "/workspace/outputs"
-BASE_INPUTS_DIR = "/workspace/inputs"
+BASE_YUE_DIR = os.environ.get("YUE_DIR", "/workspace/YuE")
+BASE_MODELS_DIR = os.environ.get("YUE_MODELS_DIR", "/workspace/models")
+BASE_OUTPUTS_DIR = os.environ.get("YUE_OUTPUTS_DIR", "/workspace/outputs")
+BASE_INPUTS_DIR = os.environ.get("YUE_INPUTS_DIR", "/workspace/inputs")
 
-DEFAULT_STAGE1_MODEL = f"{BASE_MODELS_DIR}/YuE-s1-7B-anneal-en-cot"
-DEFAULT_STAGE2_MODEL = f"{BASE_MODELS_DIR}/YuE-s2-1B-general"
+DEFAULT_STAGE1_MODEL = "m-a-p/YuE-s1-7B-anneal-en-cot"
+DEFAULT_STAGE2_MODEL = "m-a-p/YuE-s2-1B-general"
 
 CONDA_ACTIVATE_PATH = "/opt/conda/etc/profile.d/conda.sh"
 CONDA_ENV_NAME = "pyenv"
+
+def check_gpu_available():
+    if os.path.exists("/dev/nvidia0"):
+        return True
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except ImportError:
+        try:
+            result = subprocess.run(["nvidia-smi"], capture_output=True, timeout=5)
+            return result.returncode == 0
+        except Exception:
+            return False
+
+HAS_GPU = check_gpu_available()
 
 os.makedirs(BASE_OUTPUTS_DIR, exist_ok=True)
 os.makedirs(BASE_INPUTS_DIR, exist_ok=True)
@@ -85,15 +100,9 @@ def build_argv(job):
         f.write(lyrics)
 
     argv = [
-        "python", "-u", f"{BASE_YUE_DIR}/infer.py",
-        "--stage1_use_exl2",
+        "python", "-u", f"{BASE_YUE_DIR}/inference/infer.py",
         "--stage1_model", stage1_model,
-        "--stage1_cache_size", "16384",
-        "--stage1_cache_mode", "FP16",
-        "--stage2_use_exl2",
         "--stage2_model", stage2_model,
-        "--stage2_cache_size", "8192",
-        "--stage2_cache_mode", "FP16",
         "--genre_txt", genre_file,
         "--lyrics_txt", lyrics_file,
         "--run_n_segments", str(num_segments),
@@ -101,11 +110,8 @@ def build_argv(job):
         "--cuda_idx", "0",
         "--seed", str(seed),
         "--max_new_tokens", str(max_new_tokens),
-        "--basic_model_config", f"{BASE_YUE_DIR}/xcodec_mini_infer/final_ckpt/config.yaml",
-        "--resume_path", f"{BASE_YUE_DIR}/xcodec_mini_infer/final_ckpt/ckpt_00360000.pth",
-        "--config_path", f"{BASE_YUE_DIR}/xcodec_mini_infer/decoders/config.yaml",
-        "--vocal_decoder_path", f"{BASE_YUE_DIR}/xcodec_mini_infer/decoders/decoder_131000.pth",
-        "--inst_decoder_path", f"{BASE_YUE_DIR}/xcodec_mini_infer/decoders/decoder_151000.pth",
+        "--stage2_batch_size", "4",
+        "--repetition_penalty", "1.1",
     ]
 
     if custom_filename.strip():
@@ -121,8 +127,6 @@ def run_job(job):
     use_conda = os.path.isfile(CONDA_ACTIVATE_PATH)
 
     env = os.environ.copy()
-    env["HF_HUB_OFFLINE"] = "1"
-    env["TRANSFORMERS_OFFLINE"] = "1"
 
 
     if use_conda:
@@ -800,9 +804,11 @@ def main():
     print(f"  Port: {PORT}")
     print(f"  Models dir: {BASE_MODELS_DIR}")
     print(f"  Output dir: {BASE_OUTPUTS_DIR}")
-    print(f"  Stage1: {os.path.exists(DEFAULT_STAGE1_MODEL)}")
-    print(f"  Stage2: {os.path.exists(DEFAULT_STAGE2_MODEL)}")
-    print(f"  GPU: {os.path.exists('/dev/nvidia0')}")
+    print(f"  Stage1 model: {DEFAULT_STAGE1_MODEL}")
+    print(f"  Stage2 model: {DEFAULT_STAGE2_MODEL}")
+    print(f"  YuE dir: {BASE_YUE_DIR}")
+    print(f"  YuE infer.py exists: {os.path.exists(os.path.join(BASE_YUE_DIR, 'inference', 'infer.py'))}")
+    print(f"  GPU: {HAS_GPU}")
     patch_transformers_torch_check()
     print(f"=" * 60)
 
