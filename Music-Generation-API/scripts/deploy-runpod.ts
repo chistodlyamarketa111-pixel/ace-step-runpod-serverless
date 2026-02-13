@@ -38,17 +38,16 @@ const ENGINE_CONFIGS = {
   },
   yue: {
     name: "yue-music-gen",
-    imageName: "alissonpereiraanjos/yue-interface:latest",
+    imageName: "runpod/pytorch:2.8.0-py3.12-cuda12.8.1-cudnn-devel-ubuntu22.04",
     gpuTypeIds: [
+      "NVIDIA GeForce RTX 4090",
       "NVIDIA L40S",
       "NVIDIA RTX A6000",
-      "NVIDIA A100 80GB PCIe",
-      "NVIDIA A100-SXM4-80GB",
     ],
-    containerDiskInGb: 100,
+    containerDiskInGb: 50,
     envVar: "YUE_POD_ID",
     searchTerms: ["yue-music-gen", "yue"],
-    ports: ["7860/http"],
+    ports: ["8000/http"],
   },
 } as const;
 
@@ -82,8 +81,7 @@ async function createPod(engine: EngineName): Promise<any> {
     volumeInGb: 0,
     ports: config.ports,
     cloudType: "SECURE",
-    allowedCudaVersions: ["12.8", "12.9"],
-    env: engine === "yue" ? { DOWNLOAD_MODELS: "all" } : {},
+    env: {},
   };
 
   console.log(
@@ -144,31 +142,20 @@ async function waitForApiReady(
   engine: EngineName,
   maxWaitMs = 180000,
 ): Promise<boolean> {
-  const port = engine === "yue" ? "7860" : "8000";
-  const baseUrl = `https://${podId}-${port}.proxy.runpod.net`;
+  const baseUrl = `https://${podId}-8000.proxy.runpod.net`;
   const start = Date.now();
   console.log(`Waiting for API to become ready at ${baseUrl}...`);
 
   while (Date.now() - start < maxWaitMs) {
     try {
-      if (engine === "yue") {
-        const res = await fetch(`${baseUrl}/`, {
-          signal: AbortSignal.timeout(10000),
-        });
-        if (res.ok) {
-          console.log("  Gradio API is ready!");
+      const res = await fetch(`${baseUrl}/health`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === "ok") {
+          console.log("  API is ready!");
           return true;
-        }
-      } else {
-        const res = await fetch(`${baseUrl}/health`, {
-          signal: AbortSignal.timeout(5000),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status === "ok") {
-            console.log("  API is ready!");
-            return true;
-          }
         }
       }
     } catch {}
@@ -269,6 +256,7 @@ async function main() {
       if (ready) await enforceGpuOnlySettings(existingPod.id);
     }
     if (engine === "yue") {
+      console.log(`  YuE API URL: https://${existingPod.id}-8000.proxy.runpod.net`);
       await waitForApiReady(existingPod.id, engine, 30000);
     }
     return;
@@ -308,23 +296,19 @@ async function main() {
 
   if (engine === "yue") {
     console.log(
-      "\nWaiting for YuE Gradio API to load models (this can take 5-10 minutes)...",
+      "\nYuE pod created. You need to set up the API server manually:",
     );
-    const apiReady = await waitForApiReady(readyPod.id, engine, 600000);
-    if (apiReady) {
-      console.log("  YuE Gradio interface is ready!");
-    } else {
-      console.log(
-        "\nWARNING: YuE API did not become ready within timeout. Model may still be downloading.",
-      );
-    }
+    console.log("  1. Upload yue_api_server.py to the pod");
+    console.log("  2. Install dependencies: pip install flask soundfile");
+    console.log("  3. Clone YuE model: git clone https://github.com/multimodal-art-projection/YuE");
+    console.log("  4. Run: python yue_api_server.py");
+    console.log(`\n  Pod URL: https://${readyPod.id}-8000.proxy.runpod.net`);
   }
 
-  const port = engine === "yue" ? "7860" : "8000";
   console.log(
     `\nThe model may need additional time to load after the pod starts.`,
   );
-  console.log(`Check at: https://${readyPod.id}-${port}.proxy.runpod.net/`);
+  console.log(`Check at: https://${readyPod.id}-8000.proxy.runpod.net/`);
 }
 
 main().catch((err) => {
