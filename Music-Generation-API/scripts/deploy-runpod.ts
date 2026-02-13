@@ -38,7 +38,7 @@ const ENGINE_CONFIGS = {
   },
   yue: {
     name: "yue-music-gen",
-    imageName: "runpod/pytorch:2.8.0-py3.12-cuda12.8.1-cudnn-devel-ubuntu22.04",
+    imageName: "runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04",
     gpuTypeIds: [
       "NVIDIA GeForce RTX 4090",
       "NVIDIA L40S",
