@@ -9,12 +9,23 @@ import { log } from "./index";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { requireBearerAuth } from "./middleware/auth";
+import path from "path";
+import fs from "fs";
 
 export async function registerRoutes(
   _httpServer: Server,
   app: Express,
 ): Promise<Server> {
   // ===== PUBLIC =====
+
+  app.get("/api/scripts/yue-server", (_req, res) => {
+    const scriptPath = path.resolve(process.cwd(), "scripts/yue_api_server.py");
+    if (!fs.existsSync(scriptPath)) {
+      return res.status(404).json({ error: "Script not found" });
+    }
+    res.setHeader("Content-Type", "text/plain");
+    res.sendFile(scriptPath);
+  });
 
   app.get("/api/engines", async (_req, res) => {
     res.json({
