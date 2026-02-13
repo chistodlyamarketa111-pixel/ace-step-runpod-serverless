@@ -37,25 +37,51 @@ export async function submitTask(params: {
   const customFilename = `yue${Date.now().toString(36)}`;
   log(`YuE submit: genre=${genreText}, segments=${numSegments}, seed=${seed}, filename=${customFilename}`, "yue");
 
-  const response = await fetch(`${getBaseUrl()}/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      genre: genreText,
-      lyrics: lyricsText,
-      num_segments: numSegments,
-      duration,
-      seed,
-      max_new_tokens: 3000,
-      custom_filename: customFilename,
-    }),
-    signal: AbortSignal.timeout(30000),
-  });
+  const maxRetries = 3;
+  let response: Response | null = null;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      response = await fetch(`${getBaseUrl()}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          genre: genreText,
+          lyrics: lyricsText,
+          num_segments: numSegments,
+          duration,
+          seed,
+          max_new_tokens: 3000,
+          custom_filename: customFilename,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
 
-  if (!response.ok) {
-    const text = await response.text();
-    log(`YuE submit error: ${response.status} ${text}`, "yue");
-    throw new Error(`YuE API error: ${response.status} - ${text}`);
+      if (response.ok) break;
+
+      if (response.status === 502 || response.status === 503 || response.status === 504) {
+        log(`YuE submit attempt ${attempt}/${maxRetries} got ${response.status}, retrying in ${attempt * 10}s...`, "yue");
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, attempt * 10000));
+          continue;
+        }
+      }
+
+      const text = await response.text();
+      log(`YuE submit error: ${response.status} ${text.slice(0, 200)}`, "yue");
+      throw new Error(`YuE pod unavailable (${response.status}). Please ensure the pod is running.`);
+    } catch (e: any) {
+      if (e.message.includes("YuE pod unavailable")) throw e;
+      if (attempt < maxRetries) {
+        log(`YuE submit attempt ${attempt} failed: ${e.message}, retrying...`, "yue");
+        await new Promise(r => setTimeout(r, attempt * 10000));
+        continue;
+      }
+      throw new Error(`YuE pod not reachable after ${maxRetries} attempts: ${e.message}`);
+    }
+  }
+
+  if (!response || !response.ok) {
+    throw new Error("YuE pod unavailable after retries");
   }
 
   const result = await response.json() as any;
@@ -89,6 +115,10 @@ export async function queryTaskStatus(taskId: string): Promise<{
     if (!response.ok) {
       if (response.status === 404) {
         return { status: "FAILED", error: "Job not found on YuE pod" };
+      }
+      if (response.status === 502 || response.status === 503 || response.status === 504) {
+        log(`YuE pod temporarily unavailable (${response.status}), treating as in-progress`, "yue");
+        return { status: "IN_PROGRESS", logs: `Pod busy (${response.status}), generation likely in progress...` };
       }
       return { status: "FAILED", error: `Status check failed: ${response.status}` };
     }
