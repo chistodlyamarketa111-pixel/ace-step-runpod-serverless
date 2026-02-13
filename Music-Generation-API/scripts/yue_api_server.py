@@ -95,6 +95,15 @@ def build_argv(job):
     stage2_model = p.get("stage2_model", DEFAULT_STAGE2_MODEL)
     custom_filename = job.custom_filename
 
+    import re
+    sections = re.findall(r"\[\w+\]", lyrics)
+    if len(sections) < 2:
+        if sections:
+            lyrics = lyrics.rstrip() + "\n\n[chorus]\nLa la la, oh yeah\n"
+        else:
+            lyrics = "[verse]\n" + lyrics.strip() + "\n\n[chorus]\nLa la la, oh yeah\n"
+        print(f"[{job.id}] Padded lyrics to 2 sections for YuE compatibility")
+
     genre_file = f"/tmp/yue_genre_{job.id}.txt"
     lyrics_file = f"/tmp/yue_lyrics_{job.id}.txt"
     with open(genre_file, "w") as f:
