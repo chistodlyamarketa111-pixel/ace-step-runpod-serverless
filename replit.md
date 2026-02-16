@@ -77,7 +77,7 @@ All endpoints are prefixed with `/api/`. Key routes:
 - **ACE-Step Pod** (`RUNPOD_POD_ID` env var): Docker image `valyriantech/ace-step-1.5:latest`
 - **HeartMuLa Pod** (`HEARTMULA_POD_ID` env var): Docker image `ambsd/heartmula-studio:latest`
 - **YuE Pod** (`YUE_POD_ID` env var): Custom Python API server (`scripts/yue_api_server.py`) running YuE model with post-processing support
-- **DiffRhythm Pod** (`DIFFRHYTHM_POD_ID` env var): Custom Python API server (`scripts/diffrhythm_api_server.py`) running DiffRhythm + Demucs + Matchering pipeline. Needs 6-8 GB VRAM (FP16)
+- **DiffRhythm Serverless** (`DIFFRHYTHM_ENDPOINT_ID` env var): RunPod Serverless endpoint running `scripts/diffrhythm_serverless_worker.py`. GPU spins up only on request (min workers = 0), auto-scales. Needs 6-8 GB VRAM (FP16). Audio returned as base64 in job output.
 - Deployment scripts in `scripts/deploy-runpod.ts` and `scripts/deploy-heartmula.ts` use RunPod REST API (`RUNPOD_API_KEY`)
 
 ### Suno API
@@ -102,13 +102,14 @@ All endpoints are prefixed with `/api/`. Key routes:
 - `RUNPOD_POD_ID` — ACE-Step pod identifier
 - `HEARTMULA_POD_ID` — HeartMuLa pod identifier
 - `YUE_POD_ID` — YuE pod identifier
-- `DIFFRHYTHM_POD_ID` — DiffRhythm pipeline pod identifier
-- `RUNPOD_API_KEY` — RunPod API key for pod management
+- `DIFFRHYTHM_ENDPOINT_ID` — RunPod Serverless endpoint ID for DiffRhythm (GPU starts only on request)
+- `RUNPOD_API_KEY` — RunPod API key for pod management and serverless endpoints
 - `API_BEARER_TOKEN` — Bearer token for API authentication
 - `SUNO_API_KEY` — Suno API key for comparisons
 - `AI_INTEGRATIONS_GEMINI_API_KEY` — Gemini API key
 - `AI_INTEGRATIONS_GEMINI_BASE_URL` — Gemini API base URL
 
 ## Recent Changes
-- **2026-02-16**: Added DiffRhythm and DiffRhythm+Pipeline engines — modular architecture: DiffRhythm (latent diffusion, Apache 2.0) → Demucs stem separation → Matchering mastering. Created API server (`scripts/diffrhythm_api_server.py`), TypeScript client (`server/diffrhythm.ts`), engine classes (`server/engines/diffrhythm.ts`, `server/engines/diffrhythm-pp.ts`). Registered in engine registry (6 engines total). Updated frontend: engine selector (3-col grid), EngineBadge, hero section, API docs cards, comparison form. Requires `DIFFRHYTHM_POD_ID` env var for pod connection.
+- **2026-02-16**: Migrated DiffRhythm to RunPod Serverless — GPU starts only on request, no idle costs. Created serverless worker (`scripts/diffrhythm_serverless_worker.py`), rewrote TypeScript client to use RunPod Serverless API (`/run`, `/status/{id}`). Audio returned as base64 in job output. Env var changed: `DIFFRHYTHM_POD_ID` → `DIFFRHYTHM_ENDPOINT_ID`. Old HTTP server kept as reference (`scripts/diffrhythm_api_server.py`).
+- **2026-02-16**: Added DiffRhythm and DiffRhythm+Pipeline engines — modular architecture: DiffRhythm (latent diffusion, Apache 2.0) → Demucs stem separation → Matchering mastering. Registered in engine registry (6 engines total). Updated frontend: engine selector (3-col grid), EngineBadge, hero section, API docs cards, comparison form.
 - **2026-02-13**: Added YuE and YuE+PP engines to frontend (Playground engine selector, hero section, EngineBadge component). Updated comparison UI for 3-way layout (Suno vs YuE raw vs YuE+PP). Added enablePP checkbox to comparison form. Updated header and descriptions to reflect multi-engine architecture.

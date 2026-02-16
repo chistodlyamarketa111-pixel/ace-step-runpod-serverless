@@ -6,7 +6,7 @@ export class DiffRhythmPPEngine implements MusicEngine {
     return {
       id: "diffrhythm-pp",
       name: "DiffRhythm + Post-Processing",
-      description: "Modular pipeline: DiffRhythm generation → Demucs stem separation → stem remixing → Matchering mastering. Higher quality output through specialized processing at each stage. Apache 2.0 license.",
+      description: "Modular pipeline: DiffRhythm generation → Demucs stem separation → stem remixing → Matchering mastering. Higher quality output through specialized processing at each stage. Runs on RunPod Serverless. Apache 2.0 license.",
       maxDuration: 285,
       supportedParams: [
         "prompt", "lyrics", "duration", "style", "seed",
@@ -35,9 +35,14 @@ export class DiffRhythmPPEngine implements MusicEngine {
 
   async queryTaskStatus(taskId: string): Promise<TaskStatus> {
     const result = await diffrhythm.queryTaskStatus(taskId);
+    if (result.status === "COMPLETED" && result.audio_base64) {
+      return {
+        status: "COMPLETED",
+        audio_path: taskId,
+      };
+    }
     return {
       status: result.status as TaskStatus["status"],
-      audio_path: result.audio_path,
       error: result.error,
     };
   }
