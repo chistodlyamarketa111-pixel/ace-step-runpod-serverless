@@ -313,7 +313,14 @@ export async function registerRoutes(
           return res.status(404).json({ error: `No ${source} audio available` });
         }
 
-        const engineId = source === "ours_pp" ? "yue-pp" : cmp.engine;
+        let engineId = cmp.engine;
+        if (source === "ours_pp") {
+          if (cmp.engine === "diffrhythm") {
+            engineId = "diffrhythm-pp";
+          } else {
+            engineId = "yue-pp";
+          }
+        }
         const musicEngine = registry.get(engineId) || registry.get(cmp.engine);
         if (!musicEngine) {
           return res.status(500).json({ error: `Engine ${engineId} not found` });

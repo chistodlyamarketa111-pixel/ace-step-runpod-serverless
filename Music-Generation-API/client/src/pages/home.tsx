@@ -50,6 +50,7 @@ import {
   RotateCcw,
   Sparkles,
   Wand2,
+  Layers,
 } from "lucide-react";
 
 const STYLES = [
@@ -170,6 +171,22 @@ function EngineBadge({ engine }: { engine: string }) {
       <Badge variant="outline" className="text-xs bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20">
         <Wand2 className="w-3 h-3 mr-1" />
         YuE + PP
+      </Badge>
+    );
+  }
+  if (engine === "diffrhythm") {
+    return (
+      <Badge variant="outline" className="text-xs bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20">
+        <Zap className="w-3 h-3 mr-1" />
+        DiffRhythm
+      </Badge>
+    );
+  }
+  if (engine === "diffrhythm-pp") {
+    return (
+      <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20">
+        <Layers className="w-3 h-3 mr-1" />
+        DiffRhythm + Pipeline
       </Badge>
     );
   }
@@ -309,6 +326,32 @@ function ApiDocsTab() {
               Params: tags, negative_tags, lyrics, title, duration, seed, temperature, cfg_scale, topk
             </div>
           </Card>
+          <Card className="p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Zap className="w-4 h-4 text-orange-500" />
+              <span className="font-semibold text-sm">DiffRhythm</span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-2">
+              Blazingly fast full-song generation using latent diffusion.
+              Generates 4:45 songs in ~30 seconds. Apache 2.0 licensed.
+            </p>
+            <div className="text-xs text-muted-foreground">
+              Params: prompt, lyrics, duration, style, seed
+            </div>
+          </Card>
+          <Card className="p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Layers className="w-4 h-4 text-amber-500" />
+              <span className="font-semibold text-sm">DiffRhythm + Pipeline</span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-2">
+              Modular pipeline: DiffRhythm → Demucs stem separation → remix → Matchering mastering.
+              Higher quality through specialized processing at each stage.
+            </p>
+            <div className="text-xs text-muted-foreground">
+              Params: prompt, lyrics, duration, style, seed (pipeline stages run automatically)
+            </div>
+          </Card>
         </div>
       </div>
 
@@ -444,6 +487,7 @@ function PlaygroundTab() {
   const selectedEngine = useWatch({ control: form.control, name: "engine" });
   const isHeartMuLa = selectedEngine === "heartmula";
   const isYuE = selectedEngine === "yue" || selectedEngine === "yue-pp";
+  const isDiffRhythm = selectedEngine === "diffrhythm" || selectedEngine === "diffrhythm-pp";
 
   const mutation = useMutation({
     mutationFn: async (data: PlaygroundFormValues) => {
@@ -506,7 +550,7 @@ function PlaygroundTab() {
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Engine</FormLabel>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => field.onChange("ace-step")}
@@ -517,7 +561,7 @@ function PlaygroundTab() {
                     }`}
                     data-testid="button-engine-ace-step"
                   >
-                    <Guitar className={`w-5 h-5 ${field.value === "ace-step" ? "text-blue-500" : "text-muted-foreground"}`} />
+                    <Guitar className={`w-5 h-5 shrink-0 ${field.value === "ace-step" ? "text-blue-500" : "text-muted-foreground"}`} />
                     <div>
                       <div className="text-sm font-medium">ACE-Step</div>
                       <div className="text-xs text-muted-foreground">Instrumental & vocals</div>
@@ -533,7 +577,7 @@ function PlaygroundTab() {
                     }`}
                     data-testid="button-engine-heartmula"
                   >
-                    <Mic className={`w-5 h-5 ${field.value === "heartmula" ? "text-pink-500" : "text-muted-foreground"}`} />
+                    <Mic className={`w-5 h-5 shrink-0 ${field.value === "heartmula" ? "text-pink-500" : "text-muted-foreground"}`} />
                     <div>
                       <div className="text-sm font-medium">HeartMuLa</div>
                       <div className="text-xs text-muted-foreground">Full songs with vocals</div>
@@ -549,7 +593,7 @@ function PlaygroundTab() {
                     }`}
                     data-testid="button-engine-yue"
                   >
-                    <Music className={`w-5 h-5 ${field.value === "yue" ? "text-purple-500" : "text-muted-foreground"}`} />
+                    <Music className={`w-5 h-5 shrink-0 ${field.value === "yue" ? "text-purple-500" : "text-muted-foreground"}`} />
                     <div>
                       <div className="text-sm font-medium">YuE</div>
                       <div className="text-xs text-muted-foreground">Lyrics to song</div>
@@ -565,10 +609,42 @@ function PlaygroundTab() {
                     }`}
                     data-testid="button-engine-yue-pp"
                   >
-                    <Wand2 className={`w-5 h-5 ${field.value === "yue-pp" ? "text-green-500" : "text-muted-foreground"}`} />
+                    <Wand2 className={`w-5 h-5 shrink-0 ${field.value === "yue-pp" ? "text-green-500" : "text-muted-foreground"}`} />
                     <div>
                       <div className="text-sm font-medium">YuE + PP</div>
                       <div className="text-xs text-muted-foreground">Lyrics to mastered song</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => field.onChange("diffrhythm")}
+                    className={`flex items-center gap-2 p-3 rounded-md border text-left transition-colors ${
+                      field.value === "diffrhythm"
+                        ? "border-orange-500 bg-orange-500/10"
+                        : "border-border hover-elevate"
+                    }`}
+                    data-testid="button-engine-diffrhythm"
+                  >
+                    <Zap className={`w-5 h-5 shrink-0 ${field.value === "diffrhythm" ? "text-orange-500" : "text-muted-foreground"}`} />
+                    <div>
+                      <div className="text-sm font-medium">DiffRhythm</div>
+                      <div className="text-xs text-muted-foreground">Fast full songs</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => field.onChange("diffrhythm-pp")}
+                    className={`flex items-center gap-2 p-3 rounded-md border text-left transition-colors ${
+                      field.value === "diffrhythm-pp"
+                        ? "border-amber-500 bg-amber-500/10"
+                        : "border-border hover-elevate"
+                    }`}
+                    data-testid="button-engine-diffrhythm-pp"
+                  >
+                    <Layers className={`w-5 h-5 shrink-0 ${field.value === "diffrhythm-pp" ? "text-amber-500" : "text-muted-foreground"}`} />
+                    <div>
+                      <div className="text-sm font-medium">DiffRhythm + Pipeline</div>
+                      <div className="text-xs text-muted-foreground">Modular mastered output</div>
                     </div>
                   </button>
                 </div>
@@ -589,7 +665,9 @@ function PlaygroundTab() {
                       ? "Describe the song: mood, genre, vocal style, instrumentation..."
                       : isYuE
                         ? "Describe the song style: genre tags like 'pop rock, female vocal, upbeat'..."
-                        : "Describe the music: genre, instruments, mood, tempo feel..."
+                        : isDiffRhythm
+                          ? "Describe the song style and mood. Add lyrics below for vocal tracks..."
+                          : "Describe the music: genre, instruments, mood, tempo feel..."
                     }
                     className="resize-none min-h-[100px]"
                     data-testid="input-prompt"
@@ -1659,7 +1737,7 @@ function AdminTab() {
 }
 
 const compareFormSchema = z.object({
-  engine: z.enum(["ace-step", "heartmula", "yue"]).default("yue"),
+  engine: z.enum(["ace-step", "heartmula", "yue", "diffrhythm"]).default("yue"),
   prompt: z.string().min(1, "Prompt is required"),
   lyrics: z.string().optional().default(""),
   tags: z.string().optional().default(""),
@@ -1782,6 +1860,7 @@ function CompareTab() {
                   <SelectItem value="yue">YuE (Lyrics-to-Song)</SelectItem>
                   <SelectItem value="heartmula">HeartMuLa</SelectItem>
                   <SelectItem value="ace-step">ACE-Step</SelectItem>
+                  <SelectItem value="diffrhythm">DiffRhythm (Fast Full Songs)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1797,6 +1876,21 @@ function CompareTab() {
                 />
                 <label htmlFor="enablePP" className="text-xs font-medium cursor-pointer">
                   Include YuE+PP (Post-Processing: mastering + RVC)
+                </label>
+              </div>
+            )}
+
+            {compareForm.watch("engine") === "diffrhythm" && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="enablePP"
+                  checked={compareForm.watch("enablePP")}
+                  onChange={(e) => compareForm.setValue("enablePP", e.target.checked)}
+                  className="rounded border-input"
+                />
+                <label htmlFor="enablePP" className="text-xs font-medium cursor-pointer">
+                  Include DiffRhythm+Pipeline (Demucs stems + Mastering)
                 </label>
               </div>
             )}
@@ -2189,17 +2283,18 @@ export default function Home() {
             Music Generation API
           </h2>
           <p className="text-muted-foreground max-w-2xl">
-            Generate music using ACE-Step v1.5, HeartMuLa, or YuE (lyrics-to-song with optional post-processing).
+            Generate music using ACE-Step v1.5, HeartMuLa, YuE, or DiffRhythm — with optional modular post-processing pipelines.
             All engines run on RunPod GPU infrastructure.
           </p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
           {[
             { icon: Guitar, title: "ACE-Step v1.5", desc: "Fine-grained DiT music generation", color: "text-blue-500 dark:text-blue-400" },
             { icon: Mic, title: "HeartMuLa", desc: "Full songs with vocals & lyrics", color: "text-pink-500 dark:text-pink-400" },
             { icon: Music, title: "YuE", desc: "Lyrics-to-song generation", color: "text-purple-500 dark:text-purple-400" },
-            { icon: Zap, title: "GPU-Accelerated", desc: "RunPod RTX 4090 inference", color: "text-amber-500 dark:text-amber-400" },
+            { icon: Zap, title: "DiffRhythm", desc: "Fast latent diffusion songs", color: "text-orange-500 dark:text-orange-400" },
+            { icon: Layers, title: "Modular Pipeline", desc: "Demucs + Matchering mastering", color: "text-amber-500 dark:text-amber-400" },
           ].map((f) => (
             <Card key={f.title} className="p-4">
               <f.icon className={`w-5 h-5 ${f.color} mb-2`} />

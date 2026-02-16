@@ -3,6 +3,8 @@ import { AceStepEngine } from "./ace-step";
 import { HeartMuLaEngine } from "./heartmula";
 import { YuEEngine } from "./yue";
 import { YuEPPEngine } from "./yue-pp";
+import { DiffRhythmEngine } from "./diffrhythm";
+import { DiffRhythmPPEngine } from "./diffrhythm-pp";
 import { log } from "../index";
 
 class EngineRegistry {
@@ -40,6 +42,8 @@ export function initializeEngines(): void {
   registry.register(new HeartMuLaEngine());
   registry.register(new YuEEngine());
   registry.register(new YuEPPEngine());
+  registry.register(new DiffRhythmEngine());
+  registry.register(new DiffRhythmPPEngine());
 
   const total = registry.getAll().length;
   const configured = registry.getAll().filter((e) => e.isConfigured()).length;
