@@ -247,18 +247,14 @@ latent_prompt, pred_frames = get_reference_latent(device, max_frames, False, Non
 print("[DiffRhythm] Reference latent ready")
 
 if max_frames > 2048:
-    print("[DiffRhythm] Casting all input tensors to float32 for full model...")
+    print("[DiffRhythm] Casting continuous tensors to float32 for full model...")
     if isinstance(style_prompt, torch.Tensor):
         style_prompt = style_prompt.float()
     if isinstance(negative_style_prompt, torch.Tensor):
         negative_style_prompt = negative_style_prompt.float()
     if isinstance(latent_prompt, torch.Tensor):
         latent_prompt = latent_prompt.float()
-    if isinstance(lrc_prompt, torch.Tensor):
-        lrc_prompt = lrc_prompt.float()
-    if isinstance(start_time, torch.Tensor):
-        start_time = start_time.float()
-    print("[DiffRhythm] All input tensors cast to float32")
+    print("[DiffRhythm] Continuous tensors cast to float32 (lrc_prompt/start_time kept as-is for embedding layers)")
 
 sig = inspect.signature(inference)
 params = list(sig.parameters.keys())
