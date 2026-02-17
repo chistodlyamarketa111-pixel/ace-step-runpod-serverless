@@ -109,16 +109,19 @@ def run_diffrhythm(job):
 import sys
 import os
 sys.path.insert(0, "{DIFFRHYTHM_DIR}")
+infer_dir = os.path.join("{DIFFRHYTHM_DIR}", "infer")
+if os.path.isdir(infer_dir):
+    sys.path.insert(0, infer_dir)
+diffrhythm_pkg = os.path.join("{DIFFRHYTHM_DIR}", "diffrhythm")
+if os.path.isdir(diffrhythm_pkg):
+    sys.path.insert(0, diffrhythm_pkg)
 os.chdir("{DIFFRHYTHM_DIR}")
-
-import subprocess
-result = subprocess.run(["find", "{DIFFRHYTHM_DIR}", "-name", "infer.py", "-type", "f"], capture_output=True, text=True, timeout=5)
-print(f"[DiffRhythm] Found infer.py files: {{result.stdout.strip()}}")
-result2 = subprocess.run(["find", "{DIFFRHYTHM_DIR}", "-name", "__init__.py", "-path", "*/diffrhythm/*"], capture_output=True, text=True, timeout=5)
-print(f"[DiffRhythm] Found __init__.py: {{result2.stdout.strip()}}")
 
 import torch
 import torchaudio
+
+prepare_model = None
+inference = None
 
 try:
     from diffrhythm.infer.infer_utils import prepare_model
@@ -126,15 +129,17 @@ try:
     print("[DiffRhythm] Using diffrhythm.infer (v1.2+)")
 except ImportError as e1:
     print(f"[DiffRhythm] v1.2+ import failed: {{e1}}")
+
+if prepare_model is None:
     try:
-        from infer import prepare_model, inference
-        print("[DiffRhythm] Using infer.prepare_model")
+        from infer_utils import prepare_model
+        from infer import inference
+        print("[DiffRhythm] Using infer_utils + infer (flat structure)")
     except ImportError as e2:
-        print(f"[DiffRhythm] infer import failed: {{e2}}")
-        sys.path.insert(0, os.path.join("{DIFFRHYTHM_DIR}", "diffrhythm"))
-        from infer.infer_utils import prepare_model
-        from infer.infer import inference
-        print("[DiffRhythm] Using infer.infer_utils (direct path)")
+        print(f"[DiffRhythm] flat import failed: {{e2}}")
+
+if prepare_model is None:
+    raise ImportError("Could not import DiffRhythm prepare_model from any location")
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"[DiffRhythm] Device: {{device}}")
