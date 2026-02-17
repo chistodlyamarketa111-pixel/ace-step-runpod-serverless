@@ -27,6 +27,15 @@ export async function registerRoutes(
     res.sendFile(scriptPath);
   });
 
+  app.get("/api/scripts/diffrhythm-server", (_req, res) => {
+    const scriptPath = path.resolve(process.cwd(), "scripts/diffrhythm_api_server.py");
+    if (!fs.existsSync(scriptPath)) {
+      return res.status(404).json({ error: "Script not found" });
+    }
+    res.setHeader("Content-Type", "text/plain");
+    res.sendFile(scriptPath);
+  });
+
   app.get("/api/engines", async (_req, res) => {
     res.json({
       engines: registry.getAllInfo(),
