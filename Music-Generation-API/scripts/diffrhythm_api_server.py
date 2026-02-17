@@ -187,13 +187,16 @@ if max_frames > 2048:
         muq = muq.float()
     if hasattr(vae, "float"):
         vae = vae.float()
-    dte = getattr(cfm.transformer, "duration_time_embed", None)
-    if dte is not None:
-        _orig_dte_forward = dte.forward
-        def _patched_dte_forward(x, *a, **kw):
-            return _orig_dte_forward(x.float(), *a, **kw)
-        dte.forward = _patched_dte_forward
-        print("[DiffRhythm] Monkey-patched duration_time_embed to cast input to float32")
+    for embed_name in ["duration_time_embed", "start_time_embed"]:
+        embed = getattr(cfm.transformer, embed_name, None)
+        if embed is not None:
+            _orig_fwd = embed.forward
+            def _make_patch(orig):
+                def _patched(x, *a, **kw):
+                    return orig(x.float() if x.is_floating_point() or x.dtype == torch.long else x, *a, **kw)
+                return _patched
+            embed.forward = _make_patch(_orig_fwd)
+            print(f"[DiffRhythm] Monkey-patched {{embed_name}} to cast input to float32")
     print("[DiffRhythm] Forced float32 for full model (6144 frames)")
 elif use_fp16:
     cfm = cfm.half()
@@ -248,13 +251,15 @@ print("[DiffRhythm] Reference latent ready")
 
 if max_frames > 2048:
     print("[DiffRhythm] Casting continuous tensors to float32 for full model...")
-    if isinstance(style_prompt, torch.Tensor):
+    if isinstance(style_prompt, torch.Tensor) and style_prompt.is_floating_point():
         style_prompt = style_prompt.float()
-    if isinstance(negative_style_prompt, torch.Tensor):
+    if isinstance(negative_style_prompt, torch.Tensor) and negative_style_prompt.is_floating_point():
         negative_style_prompt = negative_style_prompt.float()
-    if isinstance(latent_prompt, torch.Tensor):
+    if isinstance(latent_prompt, torch.Tensor) and latent_prompt.is_floating_point():
         latent_prompt = latent_prompt.float()
-    print("[DiffRhythm] Continuous tensors cast to float32 (lrc_prompt/start_time kept as-is for embedding layers)")
+    if isinstance(start_time, torch.Tensor) and start_time.is_floating_point():
+        start_time = start_time.float()
+    print("[DiffRhythm] Continuous tensors cast to float32")
 
 sig = inspect.signature(inference)
 params = list(sig.parameters.keys())
