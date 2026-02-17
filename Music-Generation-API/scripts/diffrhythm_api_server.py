@@ -200,15 +200,30 @@ print(f"[DiffRhythm] Generating: prompt={{prompt[:100]}}, lyrics={{len(lyrics_te
 if seed >= 0:
     torch.manual_seed(seed)
 
-lrc_result = get_lrc_token(max_frames, lyrics_text, tokenizer, device)
-if len(lrc_result) == 4:
+lrc_sig = inspect.signature(get_lrc_token)
+lrc_params = list(lrc_sig.parameters.keys())
+print(f"[DiffRhythm] get_lrc_token params: {{lrc_params}}")
+
+if len(lrc_params) >= 5:
+    max_secs = 285 if duration_sec > 95 else 95
+    lrc_result = get_lrc_token(max_frames, lyrics_text, tokenizer, max_secs, device)
+else:
+    lrc_result = get_lrc_token(max_frames, lyrics_text, tokenizer, device)
+
+if isinstance(lrc_result, tuple) and len(lrc_result) == 4:
     lrc_prompt, start_time, end_frame, song_duration = lrc_result
     print(f"[DiffRhythm] get_lrc_token returned 4 values, end_frame={{end_frame}}")
-else:
-    lrc_prompt, start_time = lrc_result[:2]
+elif isinstance(lrc_result, tuple) and len(lrc_result) == 2:
+    lrc_prompt, start_time = lrc_result
     end_frame = max_frames
     song_duration = duration_sec
-    print(f"[DiffRhythm] get_lrc_token returned {{len(lrc_result)}} values")
+    print(f"[DiffRhythm] get_lrc_token returned 2 values")
+else:
+    lrc_prompt = lrc_result
+    start_time = 0
+    end_frame = max_frames
+    song_duration = duration_sec
+    print(f"[DiffRhythm] get_lrc_token returned single value")
 
 style_prompt = get_style_prompt(muq, prompt=prompt)
 print("[DiffRhythm] Style prompt ready")
