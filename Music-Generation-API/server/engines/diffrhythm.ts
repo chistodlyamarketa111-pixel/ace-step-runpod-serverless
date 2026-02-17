@@ -6,7 +6,7 @@ export class DiffRhythmEngine implements MusicEngine {
     return {
       id: "diffrhythm",
       name: "DiffRhythm",
-      description: "Blazingly fast full-song generation using latent diffusion. Generates 4:45 songs in ~30 seconds. Supports text prompts and lyrics. Runs on RunPod Serverless — GPU starts only when needed. Apache 2.0 license.",
+      description: "Blazingly fast full-song generation using latent diffusion. Generates 4:45 songs in ~30 seconds. Supports text prompts and lyrics. Apache 2.0 license.",
       maxDuration: 285,
       supportedParams: [
         "prompt", "lyrics", "duration", "style", "seed",
@@ -35,7 +35,7 @@ export class DiffRhythmEngine implements MusicEngine {
 
   async queryTaskStatus(taskId: string): Promise<TaskStatus> {
     const result = await diffrhythm.queryTaskStatus(taskId);
-    if (result.status === "COMPLETED" && result.audio_base64) {
+    if (result.status === "COMPLETED" && result.output_files?.length) {
       return {
         status: "COMPLETED",
         audio_path: taskId,

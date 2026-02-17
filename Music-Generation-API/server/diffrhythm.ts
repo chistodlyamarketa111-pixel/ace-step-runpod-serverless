@@ -1,25 +1,17 @@
 import { log } from "./index";
 
-const DIFFRHYTHM_ENDPOINT_ID = process.env.DIFFRHYTHM_ENDPOINT_ID;
-const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
+const DIFFRHYTHM_POD_ID = process.env.DIFFRHYTHM_POD_ID;
 
-if (!DIFFRHYTHM_ENDPOINT_ID) {
-  console.warn("DIFFRHYTHM_ENDPOINT_ID not set - DiffRhythm integration will not work");
+if (!DIFFRHYTHM_POD_ID) {
+  console.warn("DIFFRHYTHM_POD_ID not set - DiffRhythm integration will not work");
 }
 
 function getBaseUrl(): string {
-  return `https://api.runpod.ai/v2/${DIFFRHYTHM_ENDPOINT_ID}`;
-}
-
-function getHeaders(): Record<string, string> {
-  return {
-    "Content-Type": "application/json",
-    "Authorization": `Bearer ${RUNPOD_API_KEY}`,
-  };
+  return `https://${DIFFRHYTHM_POD_ID}-8000.proxy.runpod.net`;
 }
 
 export function isConfigured(): boolean {
-  return Boolean(DIFFRHYTHM_ENDPOINT_ID) && Boolean(RUNPOD_API_KEY);
+  return Boolean(DIFFRHYTHM_POD_ID);
 }
 
 export async function submitTask(params: {
@@ -30,7 +22,7 @@ export async function submitTask(params: {
   seed?: number;
 }): Promise<{ task_id: string }> {
   if (!isConfigured()) {
-    throw new Error("DiffRhythm Serverless is not configured. Set DIFFRHYTHM_ENDPOINT_ID and RUNPOD_API_KEY.");
+    throw new Error("DiffRhythm is not configured. Set DIFFRHYTHM_POD_ID.");
   }
 
   const prompt = params.style
@@ -38,27 +30,24 @@ export async function submitTask(params: {
     : params.prompt;
 
   const payload = {
-    input: {
-      mode: "generate",
-      prompt,
-      lyrics: params.lyrics || "",
-      duration: params.duration || 95,
-      seed: params.seed ?? -1,
-      fp16: true,
-      chunked: true,
-    },
+    prompt,
+    lyrics: params.lyrics || "",
+    duration: params.duration || 95,
+    seed: params.seed ?? -1,
+    fp16: true,
+    chunked: true,
   };
 
-  log(`DiffRhythm serverless submit: prompt=${prompt.slice(0, 80)}, duration=${payload.input.duration}`, "diffrhythm");
+  log(`DiffRhythm submit: prompt=${prompt.slice(0, 80)}, duration=${payload.duration}`, "diffrhythm");
 
   const maxRetries = 3;
   let response: Response | null = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      response = await fetch(`${getBaseUrl()}/run`, {
+      response = await fetch(`${getBaseUrl()}/generate`, {
         method: "POST",
-        headers: getHeaders(),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(30000),
       });
@@ -75,28 +64,28 @@ export async function submitTask(params: {
 
       const text = await response.text();
       log(`DiffRhythm submit error: ${response.status} ${text.slice(0, 200)}`, "diffrhythm");
-      throw new Error(`DiffRhythm serverless error (${response.status}): ${text.slice(0, 200)}`);
+      throw new Error(`DiffRhythm error (${response.status}): ${text.slice(0, 200)}`);
     } catch (e: any) {
-      if (e.message.includes("DiffRhythm serverless error")) throw e;
+      if (e.message.includes("DiffRhythm error")) throw e;
       if (attempt < maxRetries) {
         log(`DiffRhythm submit attempt ${attempt} failed: ${e.message}, retrying...`, "diffrhythm");
         await new Promise(r => setTimeout(r, attempt * 5000));
         continue;
       }
-      throw new Error(`DiffRhythm serverless not reachable after ${maxRetries} attempts: ${e.message}`);
+      throw new Error(`DiffRhythm not reachable after ${maxRetries} attempts: ${e.message}`);
     }
   }
 
   if (!response || !response.ok) {
-    throw new Error("DiffRhythm serverless unavailable after retries");
+    throw new Error("DiffRhythm unavailable after retries");
   }
 
   const result = await response.json() as any;
-  log(`DiffRhythm submit response: id=${result.id}, status=${result.status}`, "diffrhythm");
+  log(`DiffRhythm submit response: job_id=${result.job_id}, status=${result.status}`, "diffrhythm");
 
-  const jobId = result.id;
+  const jobId = result.job_id;
   if (!jobId) {
-    throw new Error("RunPod did not return a job id");
+    throw new Error("DiffRhythm did not return a job_id");
   }
 
   return { task_id: `dr_${jobId}` };
@@ -115,7 +104,7 @@ export async function submitPipeline(params: {
   demucs_model?: string;
 }): Promise<{ task_id: string }> {
   if (!isConfigured()) {
-    throw new Error("DiffRhythm Serverless is not configured. Set DIFFRHYTHM_ENDPOINT_ID and RUNPOD_API_KEY.");
+    throw new Error("DiffRhythm is not configured. Set DIFFRHYTHM_POD_ID.");
   }
 
   const prompt = params.style
@@ -123,32 +112,29 @@ export async function submitPipeline(params: {
     : params.prompt;
 
   const payload = {
-    input: {
-      mode: "pipeline",
-      prompt,
-      lyrics: params.lyrics || "",
-      duration: params.duration || 95,
-      seed: params.seed ?? -1,
-      fp16: true,
-      chunked: true,
-      vol_vocals: params.vol_vocals ?? 1.0,
-      vol_drums: params.vol_drums ?? 1.0,
-      vol_bass: params.vol_bass ?? 1.0,
-      vol_other: params.vol_other ?? 1.0,
-      demucs_model: params.demucs_model || "htdemucs",
-    },
+    prompt,
+    lyrics: params.lyrics || "",
+    duration: params.duration || 95,
+    seed: params.seed ?? -1,
+    fp16: true,
+    chunked: true,
+    vol_vocals: params.vol_vocals ?? 1.0,
+    vol_drums: params.vol_drums ?? 1.0,
+    vol_bass: params.vol_bass ?? 1.0,
+    vol_other: params.vol_other ?? 1.0,
+    demucs_model: params.demucs_model || "htdemucs",
   };
 
-  log(`DiffRhythm pipeline serverless submit: prompt=${prompt.slice(0, 80)}`, "diffrhythm-pp");
+  log(`DiffRhythm pipeline submit: prompt=${prompt.slice(0, 80)}`, "diffrhythm-pp");
 
   const maxRetries = 3;
   let response: Response | null = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      response = await fetch(`${getBaseUrl()}/run`, {
+      response = await fetch(`${getBaseUrl()}/pipeline`, {
         method: "POST",
-        headers: getHeaders(),
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(30000),
       });
@@ -164,28 +150,28 @@ export async function submitPipeline(params: {
       }
 
       const text = await response.text();
-      throw new Error(`DiffRhythm pipeline serverless error (${response.status}): ${text.slice(0, 200)}`);
+      throw new Error(`DiffRhythm pipeline error (${response.status}): ${text.slice(0, 200)}`);
     } catch (e: any) {
-      if (e.message.includes("serverless error")) throw e;
+      if (e.message.includes("pipeline error")) throw e;
       if (attempt < maxRetries) {
         log(`DiffRhythm pipeline attempt ${attempt} failed: ${e.message}, retrying...`, "diffrhythm-pp");
         await new Promise(r => setTimeout(r, attempt * 5000));
         continue;
       }
-      throw new Error(`DiffRhythm pipeline serverless not reachable after ${maxRetries} attempts: ${e.message}`);
+      throw new Error(`DiffRhythm pipeline not reachable after ${maxRetries} attempts: ${e.message}`);
     }
   }
 
   if (!response || !response.ok) {
-    throw new Error("DiffRhythm pipeline serverless unavailable after retries");
+    throw new Error("DiffRhythm pipeline unavailable after retries");
   }
 
   const result = await response.json() as any;
-  log(`DiffRhythm pipeline response: id=${result.id}, status=${result.status}`, "diffrhythm-pp");
+  log(`DiffRhythm pipeline response: job_id=${result.job_id}, status=${result.status}`, "diffrhythm-pp");
 
-  const jobId = result.id;
+  const jobId = result.job_id;
   if (!jobId) {
-    throw new Error("RunPod did not return a job id");
+    throw new Error("DiffRhythm did not return a job_id");
   }
 
   return { task_id: `drpp_${jobId}` };
@@ -193,8 +179,7 @@ export async function submitPipeline(params: {
 
 export async function queryTaskStatus(taskId: string): Promise<{
   status: string;
-  audio_base64?: string;
-  content_type?: string;
+  output_files?: string[];
   error?: string;
   logs?: string;
 }> {
@@ -210,17 +195,12 @@ export async function queryTaskStatus(taskId: string): Promise<{
 
   try {
     const response = await fetch(`${getBaseUrl()}/status/${jobId}`, {
-      headers: getHeaders(),
       signal: AbortSignal.timeout(15000),
     });
 
     if (!response.ok) {
       if (response.status === 404) {
-        return { status: "FAILED", error: "Job not found on RunPod" };
-      }
-      if (response.status === 429 || response.status === 502 || response.status === 503) {
-        log(`RunPod temporarily unavailable (${response.status}), treating as in-progress`, "diffrhythm");
-        return { status: "IN_PROGRESS", logs: `RunPod busy (${response.status}), generation likely in progress...` };
+        return { status: "FAILED", error: "Job not found" };
       }
       return { status: "FAILED", error: `Status check failed: ${response.status}` };
     }
@@ -228,33 +208,27 @@ export async function queryTaskStatus(taskId: string): Promise<{
     const data = await response.json() as any;
 
     if (data.status === "COMPLETED") {
-      const output = data.output;
-      if (output?.error) {
-        return { status: "FAILED", error: output.error, logs: output.logs };
+      if (data.error) {
+        return { status: "FAILED", error: data.error, logs: data.logs };
       }
       return {
         status: "COMPLETED",
-        audio_base64: output?.audio_base64,
-        content_type: output?.content_type || "audio/wav",
-        logs: output?.logs,
+        output_files: data.output_files || [],
+        logs: data.logs,
       };
     }
 
-    if (data.status === "FAILED") {
+    if (data.status === "FAILED" || data.status === "ERROR") {
       return {
         status: "FAILED",
-        error: data.error || "Generation failed on RunPod",
+        error: data.error || "Generation failed",
+        logs: data.logs,
       };
     }
 
-    const statusMap: Record<string, string> = {
-      "IN_QUEUE": "IN_PROGRESS",
-      "IN_PROGRESS": "IN_PROGRESS",
-    };
-
     return {
-      status: statusMap[data.status] || "IN_PROGRESS",
-      logs: data.status === "IN_QUEUE" ? "Waiting for GPU worker to start..." : "Generating...",
+      status: "IN_PROGRESS",
+      logs: data.logs || "Generating...",
     };
   } catch (e: any) {
     log(`DiffRhythm status check error: ${e.message}`, "diffrhythm");
@@ -264,12 +238,7 @@ export async function queryTaskStatus(taskId: string): Promise<{
 
 export async function fetchAudio(audioIdentifier: string): Promise<{ buffer: Buffer; contentType: string }> {
   if (!isConfigured()) {
-    throw new Error("DiffRhythm Serverless is not configured.");
-  }
-
-  if (audioIdentifier.startsWith("data:") || audioIdentifier.length > 1000) {
-    const buffer = Buffer.from(audioIdentifier, "base64");
-    return { buffer, contentType: "audio/wav" };
+    throw new Error("DiffRhythm is not configured.");
   }
 
   const jobId = audioIdentifier.startsWith("dr_")
@@ -278,23 +247,35 @@ export async function fetchAudio(audioIdentifier: string): Promise<{ buffer: Buf
       ? audioIdentifier.slice(5)
       : audioIdentifier;
 
-  const response = await fetch(`${getBaseUrl()}/status/${jobId}`, {
-    headers: getHeaders(),
-    signal: AbortSignal.timeout(30000),
+  const statusRes = await fetch(`${getBaseUrl()}/status/${jobId}`, {
+    signal: AbortSignal.timeout(15000),
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch DiffRhythm audio: RunPod status ${response.status}`);
+  if (!statusRes.ok) {
+    throw new Error(`Failed to get job status: ${statusRes.status}`);
   }
 
-  const data = await response.json() as any;
+  const data = await statusRes.json() as any;
 
-  if (data.status !== "COMPLETED" || !data.output?.audio_base64) {
-    throw new Error(`Job ${jobId} is not completed or has no audio output`);
+  if (data.status !== "COMPLETED" || !data.output_files?.length) {
+    throw new Error(`Job ${jobId} is not completed or has no output files`);
   }
 
-  const buffer = Buffer.from(data.output.audio_base64, "base64");
-  const contentType = data.output.content_type || "audio/wav";
+  const audioFile = data.output_files[0];
+
+  const audioRes = await fetch(`${getBaseUrl()}/download/${encodeURIComponent(audioFile)}`, {
+    signal: AbortSignal.timeout(60000),
+  });
+
+  if (!audioRes.ok) {
+    throw new Error(`Failed to download audio: ${audioRes.status}`);
+  }
+
+  const arrayBuffer = await audioRes.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  const ext = audioFile.split('.').pop()?.toLowerCase();
+  const contentType = ext === "mp3" ? "audio/mpeg" : ext === "wav" ? "audio/wav" : "audio/mpeg";
 
   return { buffer, contentType };
 }
@@ -304,11 +285,11 @@ export async function checkHealth(): Promise<boolean> {
 
   try {
     const response = await fetch(`${getBaseUrl()}/health`, {
-      headers: getHeaders(),
       signal: AbortSignal.timeout(15000),
     });
     if (!response.ok) return false;
-    return true;
+    const data = await response.json() as any;
+    return data.status === "ok";
   } catch {
     return false;
   }
@@ -317,8 +298,8 @@ export async function checkHealth(): Promise<boolean> {
 export async function getPodDiagnostics(): Promise<Record<string, any>> {
   const diagnostics: Record<string, any> = {
     configured: isConfigured(),
-    endpointId: DIFFRHYTHM_ENDPOINT_ID || null,
-    mode: "serverless",
+    podId: DIFFRHYTHM_POD_ID || null,
+    mode: "pod",
     baseUrl: isConfigured() ? getBaseUrl() : null,
     timestamp: new Date().toISOString(),
   };
@@ -327,7 +308,6 @@ export async function getPodDiagnostics(): Promise<Record<string, any>> {
 
   try {
     const res = await fetch(`${getBaseUrl()}/health`, {
-      headers: getHeaders(),
       signal: AbortSignal.timeout(10000),
     });
     if (res.ok) {

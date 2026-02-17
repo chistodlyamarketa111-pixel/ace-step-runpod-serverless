@@ -114,23 +114,36 @@ import torchaudio
 import os
 
 try:
-    from infer import prepare_model, inference
-    print("[DiffRhythm] Using infer.prepare_model")
+    from diffrhythm.infer.infer_utils import prepare_model
+    from diffrhythm.infer.infer import inference
+    print("[DiffRhythm] Using diffrhythm.infer (v1.2+)")
 except ImportError:
     try:
-        from diffrhythm.infer import prepare_model, inference
-        print("[DiffRhythm] Using diffrhythm.infer.prepare_model")
+        from infer import prepare_model, inference
+        print("[DiffRhythm] Using infer.prepare_model")
     except ImportError:
-        from scripts.infer import prepare_model, inference
-        print("[DiffRhythm] Using scripts.infer.prepare_model")
+        from diffrhythm.infer import prepare_model, inference
+        print("[DiffRhythm] Using diffrhythm.infer")
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"[DiffRhythm] Device: {{device}}")
 
 use_fp16 = {use_fp16} and device == "cuda"
 chunked = {chunked}
+duration_sec = {duration}
+max_frames = 6144 if duration_sec > 95 else 3072
 
-cfm, tokenizer, muq, vae = prepare_model(device)
+try:
+    result = prepare_model(max_frames, device)
+    if len(result) == 6:
+        cfm, tokenizer, muq, vae, eval_model, eval_muq = result
+        print(f"[DiffRhythm] prepare_model returned 6 values (v1.2+), max_frames={{max_frames}}")
+    else:
+        cfm, tokenizer, muq, vae = result[:4]
+        print(f"[DiffRhythm] prepare_model returned {{len(result)}} values")
+except TypeError:
+    cfm, tokenizer, muq, vae = prepare_model(device)
+    print("[DiffRhythm] prepare_model(device) fallback")
 
 if use_fp16:
     cfm = cfm.half()
@@ -151,16 +164,33 @@ print(f"[DiffRhythm] Generating: prompt={{prompt[:100]}}, lyrics={{len(lyrics_te
 if seed >= 0:
     torch.manual_seed(seed)
 
-audio = inference(
-    cfm=cfm,
-    tokenizer=tokenizer,
-    muq=muq,
-    vae=vae,
-    prompt=prompt,
-    lyrics=lyrics_text if lyrics_text else None,
-    device=device,
-    chunked=chunked,
-)
+try:
+    audio = inference(
+        cfm_model=cfm,
+        vae_model=vae,
+        tokenizer=tokenizer,
+        muq_model=muq,
+        lrc=lyrics_text if lyrics_text else None,
+        style_prompt=prompt,
+        src_ref_audio=None,
+        max_frames=max_frames,
+        device=device,
+        chunked=chunked,
+    )
+    print("[DiffRhythm] inference() v1.2+ succeeded")
+except TypeError as e:
+    print(f"[DiffRhythm] v1.2+ inference failed: {{e}}, trying legacy API...")
+    audio = inference(
+        cfm=cfm,
+        tokenizer=tokenizer,
+        muq=muq,
+        vae=vae,
+        prompt=prompt,
+        lyrics=lyrics_text if lyrics_text else None,
+        device=device,
+        chunked=chunked,
+    )
+    print("[DiffRhythm] legacy inference() succeeded")
 
 output_path = "{output_path}"
 torchaudio.save(output_path, audio.cpu(), 44100)
