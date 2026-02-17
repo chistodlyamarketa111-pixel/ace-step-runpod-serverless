@@ -1,0 +1,25 @@
+FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    espeak-ng \
+    git \
+    wget \
+    curl \
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+    runpod>=1.8.0 \
+    demucs \
+    matchering \
+    soundfile \
+    librosa \
+    scipy \
+    torchaudio
+
+WORKDIR /workspace
+
+COPY shared_utils.py /workspace/shared_utils.py

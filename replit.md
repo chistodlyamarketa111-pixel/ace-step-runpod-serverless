@@ -72,6 +72,13 @@ All endpoints are prefixed with `/api/`. Key routes:
 
 ## External Dependencies
 
+### Docker Infrastructure
+- **Base image** (`scripts/docker/Dockerfile.base`): Shared dependencies (PyTorch, ffmpeg, Demucs, Matchering, runpod SDK, shared_utils.py)
+- **Shared utilities** (`scripts/docker/shared_utils.py`): Reusable functions for Demucs, mastering, stem remixing, base64 conversion
+- **Worker template** (`scripts/docker/worker_template.py`): Template for creating new engine serverless workers
+- **Build script** (`scripts/docker/build.sh`): Helper for building and pushing Docker images
+- **Adding new engines**: See `scripts/docker/ADDING_NEW_ENGINE.md` for step-by-step guide
+
 ### RunPod GPU Pods
 - Music generation models run on persistent RunPod pods accessed via proxy URLs (`https://{POD_ID}-8000.proxy.runpod.net`)
 - **ACE-Step Pod** (`RUNPOD_POD_ID` env var): Docker image `valyriantech/ace-step-1.5:latest`
@@ -110,6 +117,7 @@ All endpoints are prefixed with `/api/`. Key routes:
 - `AI_INTEGRATIONS_GEMINI_BASE_URL` — Gemini API base URL
 
 ## Recent Changes
+- **2026-02-17**: Created Docker infrastructure for fast engine onboarding — base image, shared utilities (Demucs, mastering, remix), worker template, build script, step-by-step guide (`scripts/docker/ADDING_NEW_ENGINE.md`). New engines can be added by copying the template, implementing `generate_audio()`, building a Docker image, and registering in the TypeScript codebase.
 - **2026-02-16**: Migrated DiffRhythm to RunPod Serverless — GPU starts only on request, no idle costs. Created serverless worker (`scripts/diffrhythm_serverless_worker.py`), rewrote TypeScript client to use RunPod Serverless API (`/run`, `/status/{id}`). Audio returned as base64 in job output. Env var changed: `DIFFRHYTHM_POD_ID` → `DIFFRHYTHM_ENDPOINT_ID`. Old HTTP server kept as reference (`scripts/diffrhythm_api_server.py`).
 - **2026-02-16**: Added DiffRhythm and DiffRhythm+Pipeline engines — modular architecture: DiffRhythm (latent diffusion, Apache 2.0) → Demucs stem separation → Matchering mastering. Registered in engine registry (6 engines total). Updated frontend: engine selector (3-col grid), EngineBadge, hero section, API docs cards, comparison form.
 - **2026-02-13**: Added YuE and YuE+PP engines to frontend (Playground engine selector, hero section, EngineBadge component). Updated comparison UI for 3-way layout (Suno vs YuE raw vs YuE+PP). Added enablePP checkbox to comparison form. Updated header and descriptions to reflect multi-engine architecture.
