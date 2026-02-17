@@ -101,30 +101,41 @@ def run_diffrhythm(job):
     if not os.path.exists(infer_script):
         infer_script = os.path.join(DIFFRHYTHM_DIR, "scripts", "infer.py")
 
-    escaped_prompt = prompt.replace('"', '\\"')
-    escaped_lyrics = lyrics.replace('"', '\\"')
+    escaped_prompt = prompt.replace("'", "\\'").replace('"', '\\"')
+    escaped_lyrics = lyrics.replace("'", "\\'").replace('"', '\\"')
     custom_infer_path = f"/tmp/diffrhythm_infer_{job.id}.py"
     with open(custom_infer_path, "w") as f:
-        f.write(f'''
+        script = """
 import sys
 import os
-sys.path.insert(0, "{DIFFRHYTHM_DIR}")
-infer_dir = os.path.join("{DIFFRHYTHM_DIR}", "infer")
+import inspect
+
+DIFFRHYTHM_DIR = "{diffrhythm_dir}"
+sys.path.insert(0, DIFFRHYTHM_DIR)
+infer_dir = os.path.join(DIFFRHYTHM_DIR, "infer")
 if os.path.isdir(infer_dir):
     sys.path.insert(0, infer_dir)
-diffrhythm_pkg = os.path.join("{DIFFRHYTHM_DIR}", "diffrhythm")
+diffrhythm_pkg = os.path.join(DIFFRHYTHM_DIR, "diffrhythm")
 if os.path.isdir(diffrhythm_pkg):
     sys.path.insert(0, diffrhythm_pkg)
-os.chdir("{DIFFRHYTHM_DIR}")
+os.chdir(DIFFRHYTHM_DIR)
 
 import torch
 import torchaudio
+import numpy as np
 
 prepare_model = None
 inference = None
+get_lrc_token = None
+get_style_prompt = None
+get_negative_style_prompt = None
+get_reference_latent = None
 
 try:
-    from diffrhythm.infer.infer_utils import prepare_model
+    from diffrhythm.infer.infer_utils import (
+        prepare_model, get_lrc_token, get_style_prompt,
+        get_negative_style_prompt, get_reference_latent,
+    )
     from diffrhythm.infer.infer import inference
     print("[DiffRhythm] Using diffrhythm.infer (v1.2+)")
 except ImportError as e1:
@@ -132,14 +143,17 @@ except ImportError as e1:
 
 if prepare_model is None:
     try:
-        from infer_utils import prepare_model
+        from infer_utils import (
+            prepare_model, get_lrc_token, get_style_prompt,
+            get_negative_style_prompt, get_reference_latent,
+        )
         from infer import inference
         print("[DiffRhythm] Using infer_utils + infer (flat structure)")
     except ImportError as e2:
         print(f"[DiffRhythm] flat import failed: {{e2}}")
 
 if prepare_model is None:
-    raise ImportError("Could not import DiffRhythm prepare_model from any location")
+    raise ImportError("Could not import DiffRhythm from any location")
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"[DiffRhythm] Device: {{device}}")
@@ -147,19 +161,25 @@ print(f"[DiffRhythm] Device: {{device}}")
 use_fp16 = {use_fp16} and device == "cuda"
 chunked = {chunked}
 duration_sec = {duration}
-max_frames = 6144 if duration_sec > 95 else 3072
 
-try:
-    result = prepare_model(max_frames, device)
-    if len(result) == 6:
-        cfm, tokenizer, muq, vae, eval_model, eval_muq = result
-        print(f"[DiffRhythm] prepare_model returned 6 values (v1.2+), max_frames={{max_frames}}")
-    else:
-        cfm, tokenizer, muq, vae = result[:4]
-        print(f"[DiffRhythm] prepare_model returned {{len(result)}} values")
-except TypeError:
-    cfm, tokenizer, muq, vae = prepare_model(device)
-    print("[DiffRhythm] prepare_model(device) fallback")
+if duration_sec > 95:
+    max_frames = 6144
+elif duration_sec > 47:
+    max_frames = 2048
+else:
+    max_frames = 2048
+
+print(f"[DiffRhythm] Duration: {{duration_sec}}s, max_frames: {{max_frames}}")
+
+result = prepare_model(max_frames, device)
+eval_model = None
+eval_muq = None
+if len(result) == 6:
+    cfm, tokenizer, muq, vae, eval_model, eval_muq = result
+    print(f"[DiffRhythm] prepare_model returned 6 values (v1.2+)")
+else:
+    cfm, tokenizer, muq, vae = result[:4]
+    print(f"[DiffRhythm] prepare_model returned {{len(result)}} values")
 
 if use_fp16:
     cfm = cfm.half()
@@ -171,8 +191,8 @@ if use_fp16:
 
 torch.cuda.empty_cache()
 
-prompt = """{escaped_prompt}"""
-lyrics_text = """{escaped_lyrics}"""
+prompt = '''{escaped_prompt}'''
+lyrics_text = '''{escaped_lyrics}'''
 seed = {seed}
 
 print(f"[DiffRhythm] Generating: prompt={{prompt[:100]}}, lyrics={{len(lyrics_text)}} chars")
@@ -180,39 +200,101 @@ print(f"[DiffRhythm] Generating: prompt={{prompt[:100]}}, lyrics={{len(lyrics_te
 if seed >= 0:
     torch.manual_seed(seed)
 
-try:
-    audio = inference(
-        cfm_model=cfm,
-        vae_model=vae,
-        tokenizer=tokenizer,
-        muq_model=muq,
-        lrc=lyrics_text if lyrics_text else None,
-        style_prompt=prompt,
-        src_ref_audio=None,
-        max_frames=max_frames,
-        device=device,
-        chunked=chunked,
-    )
-    print("[DiffRhythm] inference() v1.2+ succeeded")
-except TypeError as e:
-    print(f"[DiffRhythm] v1.2+ inference failed: {{e}}, trying legacy API...")
-    audio = inference(
-        cfm=cfm,
-        tokenizer=tokenizer,
-        muq=muq,
-        vae=vae,
-        prompt=prompt,
-        lyrics=lyrics_text if lyrics_text else None,
-        device=device,
-        chunked=chunked,
-    )
-    print("[DiffRhythm] legacy inference() succeeded")
+lrc_result = get_lrc_token(max_frames, lyrics_text, tokenizer, device)
+if len(lrc_result) == 4:
+    lrc_prompt, start_time, end_frame, song_duration = lrc_result
+    print(f"[DiffRhythm] get_lrc_token returned 4 values, end_frame={{end_frame}}")
+else:
+    lrc_prompt, start_time = lrc_result[:2]
+    end_frame = max_frames
+    song_duration = duration_sec
+    print(f"[DiffRhythm] get_lrc_token returned {{len(lrc_result)}} values")
+
+style_prompt = get_style_prompt(muq, prompt=prompt)
+print("[DiffRhythm] Style prompt ready")
+
+negative_style_prompt = get_negative_style_prompt(device)
+print("[DiffRhythm] Negative style prompt ready")
+
+latent_prompt, pred_frames = get_reference_latent(device, max_frames, False, None, None, vae)
+print("[DiffRhythm] Reference latent ready")
+
+sig = inspect.signature(inference)
+params = list(sig.parameters.keys())
+print(f"[DiffRhythm] inference() params: {{params}}")
+
+kwargs = dict(
+    cfm_model=cfm,
+    vae_model=vae,
+    cond=latent_prompt,
+    text=lrc_prompt,
+    duration=max_frames,
+    style_prompt=style_prompt,
+    negative_style_prompt=negative_style_prompt,
+    start_time=start_time,
+    pred_frames=pred_frames,
+    chunked=chunked,
+)
+
+if "eval_model" in params:
+    kwargs["eval_model"] = eval_model
+if "eval_muq" in params:
+    kwargs["eval_muq"] = eval_muq
+if "steps" in params:
+    kwargs["steps"] = 32
+if "cfg_strength" in params:
+    kwargs["cfg_strength"] = 4.0
+if "sway_sampling_coef" in params:
+    kwargs["sway_sampling_coef"] = None
+if "file_type" in params:
+    kwargs["file_type"] = "wav"
+if "vocal_flag" in params:
+    kwargs["vocal_flag"] = True if lyrics_text else False
+if "odeint_method" in params:
+    kwargs["odeint_method"] = "euler"
+if "batch_infer_num" in params:
+    kwargs["batch_infer_num"] = 1
+if "song_duration" in params:
+    kwargs["song_duration"] = duration_sec
+
+print(f"[DiffRhythm] Calling inference with keys: {{list(kwargs.keys())}}")
+
+result = inference(**kwargs)
 
 output_path = "{output_path}"
-torchaudio.save(output_path, audio.cpu(), 44100)
-print(f"[DiffRhythm] Saved: {{output_path}}")
+
+if isinstance(result, tuple) and len(result) == 2:
+    sample_rate, audio_np = result
+    if isinstance(audio_np, np.ndarray):
+        audio_tensor = torch.from_numpy(audio_np).T
+        if audio_tensor.dim() == 1:
+            audio_tensor = audio_tensor.unsqueeze(0)
+        torchaudio.save(output_path, audio_tensor.float(), int(sample_rate))
+    else:
+        torchaudio.save(output_path, torch.tensor(audio_np).T.float(), int(sample_rate))
+    print(f"[DiffRhythm] Saved (tuple): {{output_path}}")
+elif isinstance(result, torch.Tensor):
+    if result.dim() == 1:
+        result = result.unsqueeze(0)
+    torchaudio.save(output_path, result.cpu().float(), 44100)
+    print(f"[DiffRhythm] Saved (tensor): {{output_path}}")
+else:
+    with open(output_path, "wb") as out_f:
+        out_f.write(result)
+    print(f"[DiffRhythm] Saved (bytes): {{output_path}}")
+
 print("DIFFRHYTHM_DONE")
-''')
+""".format(
+            diffrhythm_dir=DIFFRHYTHM_DIR,
+            use_fp16=use_fp16,
+            chunked=chunked,
+            duration=duration,
+            escaped_prompt=escaped_prompt,
+            escaped_lyrics=escaped_lyrics,
+            seed=seed,
+            output_path=output_path,
+        )
+        f.write(script)
 
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{DIFFRHYTHM_DIR}:{env.get('PYTHONPATH', '')}"
