@@ -107,23 +107,34 @@ def run_diffrhythm(job):
     with open(custom_infer_path, "w") as f:
         f.write(f'''
 import sys
+import os
 sys.path.insert(0, "{DIFFRHYTHM_DIR}")
+os.chdir("{DIFFRHYTHM_DIR}")
+
+import subprocess
+result = subprocess.run(["find", "{DIFFRHYTHM_DIR}", "-name", "infer.py", "-type", "f"], capture_output=True, text=True, timeout=5)
+print(f"[DiffRhythm] Found infer.py files: {{result.stdout.strip()}}")
+result2 = subprocess.run(["find", "{DIFFRHYTHM_DIR}", "-name", "__init__.py", "-path", "*/diffrhythm/*"], capture_output=True, text=True, timeout=5)
+print(f"[DiffRhythm] Found __init__.py: {{result2.stdout.strip()}}")
 
 import torch
 import torchaudio
-import os
 
 try:
     from diffrhythm.infer.infer_utils import prepare_model
     from diffrhythm.infer.infer import inference
     print("[DiffRhythm] Using diffrhythm.infer (v1.2+)")
-except ImportError:
+except ImportError as e1:
+    print(f"[DiffRhythm] v1.2+ import failed: {{e1}}")
     try:
         from infer import prepare_model, inference
         print("[DiffRhythm] Using infer.prepare_model")
-    except ImportError:
-        from diffrhythm.infer import prepare_model, inference
-        print("[DiffRhythm] Using diffrhythm.infer")
+    except ImportError as e2:
+        print(f"[DiffRhythm] infer import failed: {{e2}}")
+        sys.path.insert(0, os.path.join("{DIFFRHYTHM_DIR}", "diffrhythm"))
+        from infer.infer_utils import prepare_model
+        from infer.infer import inference
+        print("[DiffRhythm] Using infer.infer_utils (direct path)")
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"[DiffRhythm] Device: {{device}}")
