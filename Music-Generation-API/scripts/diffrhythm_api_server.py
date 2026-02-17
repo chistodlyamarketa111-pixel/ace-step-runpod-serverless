@@ -289,7 +289,7 @@ if "odeint_method" in params:
 if "batch_infer_num" in params:
     kwargs["batch_infer_num"] = 1
 if "song_duration" in params:
-    kwargs["song_duration"] = torch.tensor(duration_sec, device=device)
+    kwargs["song_duration"] = torch.tensor(duration_sec, device=device, dtype=torch.float32)
 
 print(f"[DiffRhythm] Calling inference with keys: {{list(kwargs.keys())}}")
 
