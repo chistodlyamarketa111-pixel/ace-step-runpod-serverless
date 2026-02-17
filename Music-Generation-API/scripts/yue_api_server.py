@@ -114,6 +114,13 @@ def build_argv(job):
     wrapper_path = os.path.join(BASE_OUTPUTS_DIR, "_torch_patch_wrapper.py")
     with open(wrapper_path, "w") as wf:
         wf.write(
+            "import sys, os\n"
+            f"yue_dir = '{BASE_YUE_DIR}'\n"
+            f"infer_dir = os.path.join(yue_dir, 'inference')\n"
+            f"xcodec_dir = os.path.join(infer_dir, 'xcodec_mini_infer')\n"
+            "for p in [xcodec_dir, infer_dir, yue_dir]:\n"
+            "    if p not in sys.path:\n"
+            "        sys.path.insert(0, p)\n"
             "import torch, functools\n"
             "_orig = torch.load\n"
             "@functools.wraps(_orig)\n"
@@ -121,13 +128,15 @@ def build_argv(job):
             "    kw['weights_only'] = False\n"
             "    return _orig(*a, **kw)\n"
             "torch.load = _patched\n"
-            "import transformers.modeling_utils as _mu\n"
-            "if not hasattr(_mu, 'PreTrainedAudioTokenizerBase'):\n"
-            "    class _Stub:\n"
-            "        pass\n"
-            "    _mu.PreTrainedAudioTokenizerBase = _Stub\n"
-            "import sys, runpy\n"
-            f"sys.argv = sys.argv  # already set by caller\n"
+            "try:\n"
+            "    import transformers.modeling_utils as _mu\n"
+            "    if not hasattr(_mu, 'PreTrainedAudioTokenizerBase'):\n"
+            "        class _Stub:\n"
+            "            pass\n"
+            "        _mu.PreTrainedAudioTokenizerBase = _Stub\n"
+            "except Exception as e:\n"
+            "    print(f'Warning: Could not patch transformers: {e}')\n"
+            "import runpy\n"
             f"runpy.run_path('{BASE_YUE_DIR}/inference/infer.py', run_name='__main__')\n"
         )
 
