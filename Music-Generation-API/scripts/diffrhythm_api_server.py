@@ -239,6 +239,20 @@ print("[DiffRhythm] Negative style prompt ready")
 latent_prompt, pred_frames = get_reference_latent(device, max_frames, False, None, None, vae)
 print("[DiffRhythm] Reference latent ready")
 
+if max_frames > 2048:
+    print("[DiffRhythm] Casting all input tensors to float32 for full model...")
+    if isinstance(style_prompt, torch.Tensor):
+        style_prompt = style_prompt.float()
+    if isinstance(negative_style_prompt, torch.Tensor):
+        negative_style_prompt = negative_style_prompt.float()
+    if isinstance(latent_prompt, torch.Tensor):
+        latent_prompt = latent_prompt.float()
+    if isinstance(lrc_prompt, torch.Tensor):
+        lrc_prompt = lrc_prompt.float()
+    if isinstance(start_time, torch.Tensor):
+        start_time = start_time.float()
+    print("[DiffRhythm] All input tensors cast to float32")
+
 sig = inspect.signature(inference)
 params = list(sig.parameters.keys())
 print(f"[DiffRhythm] inference() params: {{params}}")
