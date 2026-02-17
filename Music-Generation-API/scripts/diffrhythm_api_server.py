@@ -185,9 +185,7 @@ if use_fp16:
     cfm = cfm.half()
     if hasattr(muq, "half"):
         muq = muq.half()
-    if hasattr(vae, "half"):
-        vae = vae.half()
-    print("[DiffRhythm] FP16 enabled")
+    print("[DiffRhythm] FP16 enabled (cfm + muq, vae stays float32)")
 
 torch.cuda.empty_cache()
 
