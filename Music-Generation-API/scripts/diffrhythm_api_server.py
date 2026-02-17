@@ -181,13 +181,18 @@ else:
     cfm, tokenizer, muq, vae = result[:4]
     print(f"[DiffRhythm] prepare_model returned {{len(result)}} values")
 
-if use_fp16 and max_frames <= 2048:
+if max_frames > 2048:
+    cfm = cfm.float()
+    if hasattr(muq, "float"):
+        muq = muq.float()
+    if hasattr(vae, "float"):
+        vae = vae.float()
+    print("[DiffRhythm] Forced float32 for full model (6144 frames) — avoids duration_time_embed dtype conflict")
+elif use_fp16:
     cfm = cfm.half()
     if hasattr(muq, "half"):
         muq = muq.half()
     print("[DiffRhythm] FP16 enabled (cfm + muq, base model)")
-elif use_fp16 and max_frames > 2048:
-    print("[DiffRhythm] FP16 skipped for full model (6144 frames) — dtype conflict with duration_time_embed")
 
 torch.cuda.empty_cache()
 
