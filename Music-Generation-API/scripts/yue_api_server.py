@@ -115,6 +115,8 @@ def build_argv(job):
     with open(wrapper_path, "w") as wf:
         wf.write(
             "import sys, os\n"
+            "os.environ['ATTN_BACKEND'] = 'eager'\n"
+            "os.environ['TRANSFORMERS_NO_FLASH_ATTENTION'] = '1'\n"
             f"yue_dir = '{BASE_YUE_DIR}'\n"
             f"infer_dir = os.path.join(yue_dir, 'inference')\n"
             f"xcodec_dir = os.path.join(infer_dir, 'xcodec_mini_infer')\n"
@@ -136,6 +138,16 @@ def build_argv(job):
             "        _mu.PreTrainedAudioTokenizerBase = _Stub\n"
             "except Exception as e:\n"
             "    print(f'Warning: Could not patch transformers: {e}')\n"
+            "try:\n"
+            "    from transformers import AutoModelForCausalLM as _AMCLM\n"
+            "    _orig_from = _AMCLM.from_pretrained\n"
+            "    @functools.wraps(_orig_from)\n"
+            "    def _patched_from(*a, **kw):\n"
+            "        kw.pop('attn_implementation', None)\n"
+            "        return _orig_from(*a, **kw)\n"
+            "    _AMCLM.from_pretrained = classmethod(lambda cls, *a, **kw: _patched_from(*a, **kw))\n"
+            "except Exception as e:\n"
+            "    print(f'Warning: Could not patch AutoModelForCausalLM: {e}')\n"
             "import runpy\n"
             f"runpy.run_path('{BASE_YUE_DIR}/inference/infer.py', run_name='__main__')\n"
         )
