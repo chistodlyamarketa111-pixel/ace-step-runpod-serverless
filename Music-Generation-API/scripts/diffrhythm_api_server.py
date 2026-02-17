@@ -276,25 +276,43 @@ result = inference(**kwargs)
 
 output_path = "{output_path}"
 
+print(f"[DiffRhythm] Result type: {{type(result)}}")
+
+if isinstance(result, list):
+    result = result[0]
+    print(f"[DiffRhythm] Unwrapped list, inner type: {{type(result)}}")
+
 if isinstance(result, tuple) and len(result) == 2:
     sample_rate, audio_np = result
     if isinstance(audio_np, np.ndarray):
-        audio_tensor = torch.from_numpy(audio_np).T
+        audio_tensor = torch.from_numpy(audio_np)
         if audio_tensor.dim() == 1:
             audio_tensor = audio_tensor.unsqueeze(0)
+        elif audio_tensor.shape[-1] <= 2 and audio_tensor.dim() == 2:
+            audio_tensor = audio_tensor.T
         torchaudio.save(output_path, audio_tensor.float(), int(sample_rate))
+    elif isinstance(audio_np, torch.Tensor):
+        audio_t = audio_np.cpu().float()
+        if audio_t.dim() == 1:
+            audio_t = audio_t.unsqueeze(0)
+        torchaudio.save(output_path, audio_t, int(sample_rate))
     else:
-        torchaudio.save(output_path, torch.tensor(audio_np).T.float(), int(sample_rate))
+        torchaudio.save(output_path, torch.tensor(audio_np).float(), int(sample_rate))
     print(f"[DiffRhythm] Saved (tuple): {{output_path}}")
 elif isinstance(result, torch.Tensor):
-    if result.dim() == 1:
-        result = result.unsqueeze(0)
-    torchaudio.save(output_path, result.cpu().float(), 44100)
+    audio_t = result.cpu().float()
+    if audio_t.dim() == 1:
+        audio_t = audio_t.unsqueeze(0)
+    torchaudio.save(output_path, audio_t, 44100)
     print(f"[DiffRhythm] Saved (tensor): {{output_path}}")
-else:
+elif isinstance(result, bytes):
     with open(output_path, "wb") as out_f:
         out_f.write(result)
     print(f"[DiffRhythm] Saved (bytes): {{output_path}}")
+else:
+    print(f"[DiffRhythm] Unknown result type: {{type(result)}}, trying to save...")
+    torchaudio.save(output_path, torch.tensor(result).float(), 44100)
+    print(f"[DiffRhythm] Saved (fallback): {{output_path}}")
 
 print("DIFFRHYTHM_DONE")
 """.format(
