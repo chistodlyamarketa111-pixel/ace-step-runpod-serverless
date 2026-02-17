@@ -187,7 +187,14 @@ if max_frames > 2048:
         muq = muq.float()
     if hasattr(vae, "float"):
         vae = vae.float()
-    print("[DiffRhythm] Forced float32 for full model (6144 frames) — avoids duration_time_embed dtype conflict")
+    dte = getattr(cfm.transformer, "duration_time_embed", None)
+    if dte is not None:
+        _orig_dte_forward = dte.forward
+        def _patched_dte_forward(x, *a, **kw):
+            return _orig_dte_forward(x.float(), *a, **kw)
+        dte.forward = _patched_dte_forward
+        print("[DiffRhythm] Monkey-patched duration_time_embed to cast input to float32")
+    print("[DiffRhythm] Forced float32 for full model (6144 frames)")
 elif use_fp16:
     cfm = cfm.half()
     if hasattr(muq, "half"):
@@ -289,7 +296,7 @@ if "odeint_method" in params:
 if "batch_infer_num" in params:
     kwargs["batch_infer_num"] = 1
 if "song_duration" in params:
-    kwargs["song_duration"] = torch.tensor(duration_sec, device=device, dtype=torch.float32)
+    kwargs["song_duration"] = torch.tensor(duration_sec, device=device)
 
 print(f"[DiffRhythm] Calling inference with keys: {{list(kwargs.keys())}}")
 
