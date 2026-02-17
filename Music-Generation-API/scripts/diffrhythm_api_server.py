@@ -101,6 +101,8 @@ def run_diffrhythm(job):
     if not os.path.exists(infer_script):
         infer_script = os.path.join(DIFFRHYTHM_DIR, "scripts", "infer.py")
 
+    escaped_prompt = prompt.replace('"', '\\"')
+    escaped_lyrics = lyrics.replace('"', '\\"')
     custom_infer_path = f"/tmp/diffrhythm_infer_{job.id}.py"
     with open(custom_infer_path, "w") as f:
         f.write(f'''
@@ -140,8 +142,8 @@ if use_fp16:
 
 torch.cuda.empty_cache()
 
-prompt = """{prompt.replace('"', '\\"')}"""
-lyrics_text = """{lyrics.replace('"', '\\"')}"""
+prompt = """{escaped_prompt}"""
+lyrics_text = """{escaped_lyrics}"""
 seed = {seed}
 
 print(f"[DiffRhythm] Generating: prompt={{prompt[:100]}}, lyrics={{len(lyrics_text)}} chars")
