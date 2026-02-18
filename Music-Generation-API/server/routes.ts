@@ -9,6 +9,8 @@ import { log } from "./index";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { requireBearerAuth } from "./middleware/auth";
+import * as fs from "fs";
+import * as path from "path";
 
 export async function registerRoutes(
   _httpServer: Server,
@@ -212,6 +214,16 @@ export async function registerRoutes(
 
   app.post("/api/generate-song-idea", requireBearerAuth, async (req, res) => {
     res.json(await gemini.generateSongIdea("ace-step"));
+  });
+
+  app.get("/api/download-server-script", (_req, res) => {
+    const filePath = path.resolve(__dirname, "../docker/ace-step/http_server.py");
+    if (fs.existsSync(filePath)) {
+      res.setHeader("Content-Type", "text/plain");
+      res.send(fs.readFileSync(filePath, "utf-8"));
+    } else {
+      res.status(404).send("File not found");
+    }
   });
 
   return _httpServer;
