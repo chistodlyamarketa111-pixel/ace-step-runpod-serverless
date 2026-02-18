@@ -8,6 +8,18 @@ import { initializeEngines } from "./engines";
 const app = express();
 const httpServer = createServer(app);
 
+import fs from "fs";
+import pathModule from "path";
+app.get("/raw/http_server.py", (_req, res) => {
+  const filePath = pathModule.resolve(process.cwd(), "docker/ace-step/http_server.py");
+  if (fs.existsSync(filePath)) {
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.send(fs.readFileSync(filePath, "utf-8"));
+  } else {
+    res.status(404).send("not found: " + filePath);
+  }
+});
+
 // Инициализация универсальной системы движков генерации
 initializeEngines();
 
