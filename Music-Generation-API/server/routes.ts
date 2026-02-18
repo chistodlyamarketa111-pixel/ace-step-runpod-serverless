@@ -217,13 +217,20 @@ export async function registerRoutes(
   });
 
   app.get("/api/download-server-script", (_req, res) => {
-    const filePath = path.resolve(__dirname, "../docker/ace-step/http_server.py");
-    if (fs.existsSync(filePath)) {
-      res.setHeader("Content-Type", "text/plain");
-      res.send(fs.readFileSync(filePath, "utf-8"));
-    } else {
-      res.status(404).send("File not found");
+    const possiblePaths = [
+      path.resolve(process.cwd(), "docker/ace-step/http_server.py"),
+      path.resolve(process.cwd(), "../docker/ace-step/http_server.py"),
+      path.resolve(process.cwd(), "Music-Generation-API/docker/ace-step/http_server.py"),
+    ];
+    for (const filePath of possiblePaths) {
+      if (fs.existsSync(filePath)) {
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.setHeader("Content-Disposition", "attachment; filename=http_server.py");
+        res.send(fs.readFileSync(filePath, "utf-8"));
+        return;
+      }
     }
+    res.status(404).send("File not found. Tried: " + possiblePaths.join(", "));
   });
 
   return _httpServer;
