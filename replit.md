@@ -96,5 +96,6 @@ All endpoints are prefixed with `/api/`. Key routes:
 - `AI_INTEGRATIONS_GEMINI_BASE_URL` — Gemini API base URL
 
 ## Recent Changes
+- **2026-02-18**: Added dynamic model switching. Handler supports 4 DiT models (turbo/sft/base/turbo-shift3) with lazy loading and caching. Frontend model selector auto-sets recommended inference steps. Model parameter flows through API → routes → runpod → handler.
 - **2026-02-18**: Created full Docker image for ACE-Step v1.5 RunPod Serverless deployment (`docker/ace-step/`). Handler uses proper v1.5 inference API with GenerationParams + generate_music. Models pre-downloaded at build time. Cleaned up old engine references (HeartMuLa, YuE, DiffRhythm) from frontend and backend.
 - **2026-02-18**: Simplified to single ACE-Step engine on RunPod Serverless. Removed HeartMuLa, YuE, YuE+PP, DiffRhythm, DiffRhythm+PP engines and all related files. Rewrote `runpod.ts` to use RunPod Serverless API with base64 audio. Simplified frontend to single-engine UI. Removed unused scripts and Docker infrastructure. Env var changed: `RUNPOD_POD_ID` → `ACESTEP_ENDPOINT_ID`.

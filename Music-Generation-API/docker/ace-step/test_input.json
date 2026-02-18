@@ -3,6 +3,7 @@
     "prompt": "A dreamy lo-fi hip hop beat with warm piano chords, soft vinyl crackle, and a gentle boom-bap rhythm",
     "lyrics": "[Instrumental]",
     "duration": 30,
+    "model": "acestep-v15-turbo",
     "task_type": "text2music",
     "audio_format": "mp3",
     "inference_steps": 8,

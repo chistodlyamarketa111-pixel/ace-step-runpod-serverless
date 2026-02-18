@@ -87,10 +87,18 @@ const VOCAL_LANGUAGES = [
   { value: "ru", label: "Russian" },
 ];
 
+const MODELS = [
+  { id: "acestep-v15-turbo", label: "ACE-Step v1.5 Turbo", steps: 8, description: "Fast generation, 8 steps" },
+  { id: "acestep-v15-sft", label: "ACE-Step v1.5 SFT", steps: 32, description: "High quality, 32 steps" },
+  { id: "acestep-v15-base", label: "ACE-Step v1.5 Base", steps: 50, description: "Maximum quality, 50 steps" },
+  { id: "acestep-v15-turbo-shift3", label: "ACE-Step v1.5 Turbo Shift3", steps: 8, description: "Fast with shift=3, 8 steps" },
+] as const;
+
 const playgroundSchema = z.object({
   prompt: z.string().min(1, "Prompt is required"),
   lyrics: z.string().optional(),
   duration: z.number().min(10).max(600),
+  model: z.string().default("acestep-v15-turbo"),
   style: z.string().optional(),
   instrument: z.string().optional(),
   bpm: z.number().min(30).max(300).optional(),
@@ -327,13 +335,14 @@ function PlaygroundTab() {
       prompt: "",
       lyrics: "",
       duration: 30,
+      model: "acestep-v15-turbo",
       style: "",
       instrument: "",
       bpm: undefined,
       key_scale: "",
       time_signature: "",
       vocal_language: "",
-      inference_steps: 40,
+      inference_steps: 8,
       guidance_scale: 7,
       thinking: false,
       shift: 3,
@@ -475,6 +484,38 @@ function PlaygroundTab() {
               )}
             />
           </div>
+
+          <FormField
+            control={form.control}
+            name="model"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Model</FormLabel>
+                <Select onValueChange={(val) => {
+                  field.onChange(val);
+                  const m = MODELS.find(m => m.id === val);
+                  if (m) form.setValue("inference_steps", m.steps);
+                }} defaultValue={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select model" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {MODELS.map(m => (
+                      <SelectItem key={m.id} value={m.id}>
+                        <div className="flex flex-col">
+                          <span>{m.label}</span>
+                          <span className="text-xs text-muted-foreground">{m.description}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
           <FormField
             control={form.control}

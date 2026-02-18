@@ -72,6 +72,11 @@ export async function registerRoutes(
         temperature: parsed.temperature,
         cfg_scale: parsed.cfg_scale,
         topk: parsed.topk,
+        model: parsed.model,
+        inference_steps: parsed.inference_steps,
+        guidance_scale: parsed.guidance_scale,
+        thinking: parsed.thinking,
+        audio_format: parsed.audio_format,
       });
 
       await storage.updateJob(job.id, {

@@ -22,61 +22,110 @@ import torch
 import soundfile as sf
 
 CHECKPOINT_DIR = os.environ.get("ACESTEP_CHECKPOINT_DIR", "/app/checkpoints")
-DIT_MODEL = os.environ.get("ACESTEP_DIT_MODEL", "acestep-v15-turbo")
+DEFAULT_DIT_MODEL = os.environ.get("ACESTEP_DIT_MODEL", "acestep-v15-turbo")
 LM_MODEL = os.environ.get("ACESTEP_LM_MODEL", "acestep-5Hz-lm-1.7B")
 CPU_OFFLOAD = os.environ.get("ACESTEP_CPU_OFFLOAD", "false").lower() == "true"
 
-dit_handler = None
+VALID_MODELS = {
+    "acestep-v15-turbo",
+    "acestep-v15-sft",
+    "acestep-v15-base",
+    "acestep-v15-turbo-shift3",
+}
+
+DEFAULT_STEPS = {
+    "acestep-v15-turbo": 8,
+    "acestep-v15-sft": 32,
+    "acestep-v15-base": 50,
+    "acestep-v15-turbo-shift3": 8,
+}
+
+dit_handlers = {}
 llm_handler = None
+_gpu_initialized = False
 
 
-def load_models():
-    global dit_handler, llm_handler
-
-    if dit_handler is not None:
+def _init_gpu():
+    global _gpu_initialized
+    if _gpu_initialized:
         return
-
-    print(f"[ACE-Step] Loading models from {CHECKPOINT_DIR}")
-    print(f"[ACE-Step] DiT model: {DIT_MODEL}, LM model: {LM_MODEL}")
-    start = time.time()
-
-    from acestep.handler import AceStepHandler
-    from acestep.llm_inference import LLMHandler
     from acestep.gpu_config import get_gpu_config, set_global_gpu_config
-
     gpu_config = get_gpu_config()
     set_global_gpu_config(gpu_config)
     print(f"[ACE-Step] GPU config: {gpu_config}")
+    _gpu_initialized = True
 
-    dit_path = os.path.join(CHECKPOINT_DIR, DIT_MODEL)
-    dit_handler = AceStepHandler(
+
+def get_dit_handler(model_name: str):
+    global dit_handlers
+    if model_name in dit_handlers:
+        return dit_handlers[model_name]
+
+    _init_gpu()
+
+    from acestep.handler import AceStepHandler
+
+    dit_path = os.path.join(CHECKPOINT_DIR, model_name)
+    if not os.path.exists(dit_path):
+        raise ValueError(f"Model '{model_name}' not found at {dit_path}. Available: {list(VALID_MODELS)}")
+
+    print(f"[ACE-Step] Loading DiT model: {model_name} from {dit_path}")
+    start = time.time()
+    handler = AceStepHandler(
         checkpoint_dir=CHECKPOINT_DIR,
         dit_model_path=dit_path,
         cpu_offload=CPU_OFFLOAD,
     )
+    elapsed = time.time() - start
+    print(f"[ACE-Step] DiT model '{model_name}' loaded in {elapsed:.1f}s")
+
+    dit_handlers[model_name] = handler
+    return handler
+
+
+def get_llm_handler():
+    global llm_handler
+    if llm_handler is not None:
+        return llm_handler
+
+    _init_gpu()
 
     lm_path = os.path.join(CHECKPOINT_DIR, LM_MODEL)
     if os.path.exists(lm_path):
+        from acestep.llm_inference import LLMHandler
+        print(f"[ACE-Step] Loading LLM: {LM_MODEL}")
+        start = time.time()
         llm_handler = LLMHandler(
             model_path=lm_path,
             checkpoint_dir=CHECKPOINT_DIR,
         )
-        print(f"[ACE-Step] LLM handler loaded from {lm_path}")
+        elapsed = time.time() - start
+        print(f"[ACE-Step] LLM loaded in {elapsed:.1f}s")
     else:
         llm_handler = None
         print(f"[ACE-Step] LM model not found at {lm_path}, CoT disabled")
 
-    elapsed = time.time() - start
-    print(f"[ACE-Step] Models loaded in {elapsed:.1f}s")
+    return llm_handler
+
+
+def load_default_models():
+    get_dit_handler(DEFAULT_DIT_MODEL)
+    get_llm_handler()
+    print(f"[ACE-Step] Available models: {[m for m in VALID_MODELS if os.path.exists(os.path.join(CHECKPOINT_DIR, m))]}")
 
 
 def handler(job):
     try:
-        load_models()
-
         job_input = job["input"]
 
         from acestep.inference import GenerationParams, GenerationConfig, generate_music
+
+        model_name = job_input.get("model", DEFAULT_DIT_MODEL)
+        if model_name not in VALID_MODELS:
+            return {"error": f"Invalid model '{model_name}'. Available: {list(VALID_MODELS)}"}
+
+        current_dit = get_dit_handler(model_name)
+        current_llm = get_llm_handler()
 
         prompt = job_input.get("prompt", "")
         lyrics = job_input.get("lyrics", "")
@@ -84,7 +133,8 @@ def handler(job):
         task_type = job_input.get("task_type", "text2music")
         audio_format = job_input.get("audio_format", "mp3")
         seed = int(job_input.get("seed", -1))
-        inference_steps = int(job_input.get("inference_steps", job_input.get("infer_step", 8)))
+        default_steps = DEFAULT_STEPS.get(model_name, 8)
+        inference_steps = int(job_input.get("inference_steps", job_input.get("infer_step", default_steps)))
         guidance_scale = float(job_input.get("guidance_scale", 7.0))
         thinking = job_input.get("thinking", True)
         batch_size = int(job_input.get("batch_size", 1))
@@ -100,7 +150,7 @@ def handler(job):
         lm_temperature = float(job_input.get("lm_temperature", 0.85))
         lm_cfg_scale = float(job_input.get("lm_cfg_scale", 2.0))
 
-        print(f"[ACE-Step] Job {job['id'][:12]}: prompt='{prompt[:80]}', "
+        print(f"[ACE-Step] Job {job['id'][:12]}: model={model_name}, prompt='{prompt[:80]}', "
               f"duration={duration}s, steps={inference_steps}, task={task_type}, "
               f"thinking={thinking}, batch={batch_size}")
 
@@ -112,7 +162,7 @@ def handler(job):
             seed=seed,
             inference_steps=inference_steps,
             guidance_scale=guidance_scale,
-            thinking=thinking if llm_handler is not None else False,
+            thinking=thinking if current_llm is not None else False,
             bpm=bpm,
             keyscale=key_scale,
             timesignature=time_signature,
@@ -131,8 +181,8 @@ def handler(job):
 
         start = time.time()
         result = generate_music(
-            dit_handler=dit_handler,
-            llm_handler=llm_handler,
+            dit_handler=current_dit,
+            llm_handler=current_llm,
             params=params,
             config=config,
         )
@@ -201,6 +251,8 @@ def handler(job):
                 if isinstance(v, (str, int, float, bool, list, dict, type(None)))
             }
 
+        response["model"] = model_name
+
         return response
 
     except Exception as e:
@@ -209,6 +261,6 @@ def handler(job):
 
 
 print("[ACE-Step] Starting RunPod Serverless worker...")
-load_models()
+load_default_models()
 print("[ACE-Step] Worker ready, waiting for jobs...")
 runpod.serverless.start({"handler": handler})
