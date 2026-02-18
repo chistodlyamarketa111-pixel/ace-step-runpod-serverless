@@ -67,7 +67,11 @@ All endpoints are prefixed with `/api/`. Key routes:
 ### RunPod Serverless
 - ACE-Step model runs on RunPod Serverless endpoint
 - GPU spins up only on request (no idle costs)
-- Worker: `scripts/ace_step_serverless_worker.py`
+- Docker image: `docker/ace-step/` — complete Dockerfile + handler for RunPod Serverless
+- Worker handler: `docker/ace-step/handler.py` — uses ACE-Step v1.5 inference API (GenerationParams, generate_music)
+- Build: `cd docker/ace-step && ./build.sh ace-step-serverless latest`
+- Base image: `runpod/pytorch:2.8.0-py3.11-cuda12.4.1-devel-ubuntu22.04` + ACE-Step v1.5 from GitHub
+- Models pre-downloaded at build time from HuggingFace (`ACE-Step/Ace-Step1.5`)
 - Env var: `ACESTEP_ENDPOINT_ID` — RunPod Serverless endpoint ID
 - Env var: `RUNPOD_API_KEY` — RunPod API key
 
@@ -92,4 +96,5 @@ All endpoints are prefixed with `/api/`. Key routes:
 - `AI_INTEGRATIONS_GEMINI_BASE_URL` — Gemini API base URL
 
 ## Recent Changes
+- **2026-02-18**: Created full Docker image for ACE-Step v1.5 RunPod Serverless deployment (`docker/ace-step/`). Handler uses proper v1.5 inference API with GenerationParams + generate_music. Models pre-downloaded at build time. Cleaned up old engine references (HeartMuLa, YuE, DiffRhythm) from frontend and backend.
 - **2026-02-18**: Simplified to single ACE-Step engine on RunPod Serverless. Removed HeartMuLa, YuE, YuE+PP, DiffRhythm, DiffRhythm+PP engines and all related files. Rewrote `runpod.ts` to use RunPod Serverless API with base64 audio. Simplified frontend to single-engine UI. Removed unused scripts and Docker infrastructure. Env var changed: `RUNPOD_POD_ID` → `ACESTEP_ENDPOINT_ID`.

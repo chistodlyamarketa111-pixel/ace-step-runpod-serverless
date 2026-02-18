@@ -1,0 +1,13 @@
+{
+  "input": {
+    "prompt": "A dreamy lo-fi hip hop beat with warm piano chords, soft vinyl crackle, and a gentle boom-bap rhythm",
+    "lyrics": "[Instrumental]",
+    "duration": 30,
+    "task_type": "text2music",
+    "audio_format": "mp3",
+    "inference_steps": 8,
+    "guidance_scale": 7.0,
+    "thinking": true,
+    "seed": 42
+  }
+}
