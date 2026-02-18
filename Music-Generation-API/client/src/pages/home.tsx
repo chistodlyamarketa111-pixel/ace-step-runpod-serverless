@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -39,18 +39,14 @@ import {
   Settings,
   ChevronDown,
   ChevronUp,
-  Mic,
   Guitar,
   Shield,
   Server,
-  Cpu,
   Activity,
   HardDrive,
   Power,
-  RotateCcw,
   Sparkles,
   Wand2,
-  Layers,
 } from "lucide-react";
 
 const STYLES = [
@@ -92,15 +88,11 @@ const VOCAL_LANGUAGES = [
 ];
 
 const playgroundSchema = z.object({
-  engine: z.string(),
   prompt: z.string().min(1, "Prompt is required"),
   lyrics: z.string().optional(),
   duration: z.number().min(10).max(600),
   style: z.string().optional(),
   instrument: z.string().optional(),
-  tags: z.string().optional(),
-  negative_tags: z.string().optional(),
-  title: z.string().optional(),
   bpm: z.number().min(30).max(300).optional(),
   key_scale: z.string().optional(),
   time_signature: z.string().optional(),
@@ -112,20 +104,6 @@ const playgroundSchema = z.object({
   infer_method: z.string(),
   use_adg: z.boolean(),
   seed: z.number().int(),
-  hm_temperature: z.number().min(0.1).max(2.0).optional().default(1.0),
-  hm_cfg_scale: z.number().min(0).max(10).optional().default(1.5),
-  hm_topk: z.number().int().min(1).max(500).optional().default(50),
-}).superRefine((data, ctx) => {
-  if (data.engine === "heartmula" && data.duration > 300) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.too_big,
-      maximum: 300,
-      type: "number",
-      inclusive: true,
-      message: "HeartMuLa max duration is 300 seconds (5 minutes)",
-      path: ["duration"],
-    });
-  }
 });
 
 type PlaygroundFormValues = z.infer<typeof playgroundSchema>;
@@ -150,46 +128,6 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function EngineBadge({ engine }: { engine: string }) {
-  if (engine === "heartmula") {
-    return (
-      <Badge variant="outline" className="text-xs bg-pink-500/10 text-pink-700 dark:text-pink-400 border-pink-500/20">
-        <Mic className="w-3 h-3 mr-1" />
-        HeartMuLa
-      </Badge>
-    );
-  }
-  if (engine === "yue") {
-    return (
-      <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/20">
-        <Music className="w-3 h-3 mr-1" />
-        YuE
-      </Badge>
-    );
-  }
-  if (engine === "yue-pp") {
-    return (
-      <Badge variant="outline" className="text-xs bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20">
-        <Wand2 className="w-3 h-3 mr-1" />
-        YuE + PP
-      </Badge>
-    );
-  }
-  if (engine === "diffrhythm") {
-    return (
-      <Badge variant="outline" className="text-xs bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/20">
-        <Zap className="w-3 h-3 mr-1" />
-        DiffRhythm
-      </Badge>
-    );
-  }
-  if (engine === "diffrhythm-pp") {
-    return (
-      <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20">
-        <Layers className="w-3 h-3 mr-1" />
-        DiffRhythm + Pipeline
-      </Badge>
-    );
-  }
   return (
     <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20">
       <Guitar className="w-3 h-3 mr-1" />
@@ -277,7 +215,7 @@ function ApiDocsTab() {
           <EndpointCard
             method="POST"
             path="/api/generate"
-            description="Submit a new music generation job. Choose engine: ace-step or heartmula."
+            description="Submit a new music generation job using the ACE-Step engine."
           />
           <EndpointCard
             method="GET"
@@ -298,65 +236,24 @@ function ApiDocsTab() {
       </div>
 
       <div>
-        <h3 className="text-lg font-semibold mb-3">Engines</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Guitar className="w-4 h-4 text-blue-500" />
-              <span className="font-semibold text-sm">ACE-Step v1.5</span>
-            </div>
-            <p className="text-xs text-muted-foreground mb-2">
-              Instrumental & vocal music generation with fine-grained DiT controls.
-              Best for short clips (15-120s) with precise parameter tuning.
-            </p>
-            <div className="text-xs text-muted-foreground">
-              Params: inference_steps, guidance_scale, bpm, key_scale, shift, thinking, use_adg
-            </div>
-          </Card>
-          <Card className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Mic className="w-4 h-4 text-pink-500" />
-              <span className="font-semibold text-sm">HeartMuLa</span>
-            </div>
-            <p className="text-xs text-muted-foreground mb-2">
-              Full song generation with vocals and lyrics, up to 5 minutes.
-              LLM-based model producing studio-quality complete songs.
-            </p>
-            <div className="text-xs text-muted-foreground">
-              Params: tags, negative_tags, lyrics, title, duration, seed, temperature, cfg_scale, topk
-            </div>
-          </Card>
-          <Card className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Zap className="w-4 h-4 text-orange-500" />
-              <span className="font-semibold text-sm">DiffRhythm</span>
-            </div>
-            <p className="text-xs text-muted-foreground mb-2">
-              Blazingly fast full-song generation using latent diffusion.
-              Generates 4:45 songs in ~30 seconds. Apache 2.0 licensed.
-            </p>
-            <div className="text-xs text-muted-foreground">
-              Params: prompt, lyrics, duration, style, seed
-            </div>
-          </Card>
-          <Card className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Layers className="w-4 h-4 text-amber-500" />
-              <span className="font-semibold text-sm">DiffRhythm + Pipeline</span>
-            </div>
-            <p className="text-xs text-muted-foreground mb-2">
-              Modular pipeline: DiffRhythm → Demucs stem separation → remix → Matchering mastering.
-              Higher quality through specialized processing at each stage.
-            </p>
-            <div className="text-xs text-muted-foreground">
-              Params: prompt, lyrics, duration, style, seed (pipeline stages run automatically)
-            </div>
-          </Card>
-        </div>
+        <h3 className="text-lg font-semibold mb-3">Engine</h3>
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Guitar className="w-4 h-4 text-blue-500" />
+            <span className="font-semibold text-sm">ACE-Step v1.5</span>
+          </div>
+          <p className="text-xs text-muted-foreground mb-2">
+            Instrumental & vocal music generation with fine-grained DiT controls.
+            Best for short clips (15-120s) with precise parameter tuning.
+          </p>
+          <div className="text-xs text-muted-foreground">
+            Params: inference_steps, guidance_scale, bpm, key_scale, shift, thinking, use_adg
+          </div>
+        </Card>
       </div>
 
       <div>
-        <h3 className="text-lg font-semibold mb-3">Request Example (ACE-Step)</h3>
+        <h3 className="text-lg font-semibold mb-3">Request Example</h3>
         <CodeBlock
           code={JSON.stringify(
             {
@@ -377,52 +274,22 @@ function ApiDocsTab() {
       </div>
 
       <div>
-        <h3 className="text-lg font-semibold mb-3">Request Example (HeartMuLa)</h3>
-        <CodeBlock
-          code={JSON.stringify(
-            {
-              engine: "heartmula",
-              prompt: "A dreamy love ballad with emotional female vocals",
-              lyrics: "[Verse 1]\nUnder the starlight\nI found you tonight\n\n[Chorus]\nYou are my everything",
-              duration: 180,
-              tags: "Pop ballad, emotional, female vocals, piano",
-              negative_tags: "harsh, distortion, noise",
-              title: "Starlight",
-              temperature: 1.0,
-              cfg_scale: 1.5,
-              topk: 50,
-              seed: -1,
-            },
-            null,
-            2
-          )}
-        />
-      </div>
-
-      <div>
         <h3 className="text-lg font-semibold mb-3">Parameters</h3>
         <div className="space-y-1">
           {[
-            { name: "engine", type: "string", required: false, desc: "Engine: 'ace-step' (default) or 'heartmula'" },
             { name: "prompt", type: "string", required: true, desc: "Text description of the music style, genre, instruments, mood" },
             { name: "lyrics", type: "string", required: false, desc: "Lyrics with structure tags: [Verse], [Chorus], [Bridge], etc." },
-            { name: "duration", type: "number", required: false, desc: "Duration in seconds (10-360 HeartMuLa, 10-600 ACE-Step, default: 30)" },
+            { name: "duration", type: "number", required: false, desc: "Duration in seconds (10-600, default: 30)" },
             { name: "style", type: "string", required: false, desc: "Musical style/genre" },
-            { name: "instrument", type: "string", required: false, desc: "Primary instrument (ACE-Step only)" },
-            { name: "tags", type: "string", required: false, desc: "Style tags, comma-separated (HeartMuLa)" },
-            { name: "negative_tags", type: "string", required: false, desc: "Elements to exclude from generation (HeartMuLa)" },
-            { name: "title", type: "string", required: false, desc: "Track title (HeartMuLa)" },
-            { name: "temperature", type: "number", required: false, desc: "Creativity control, 0.1-2.0 (HeartMuLa, default: 1.0)" },
-            { name: "cfg_scale", type: "number", required: false, desc: "Prompt adherence, 0-10 (HeartMuLa, default: 1.5)" },
-            { name: "topk", type: "number", required: false, desc: "Top-K sampling, 1-500 (HeartMuLa, default: 50)" },
-            { name: "bpm", type: "number", required: false, desc: "Tempo in BPM, 30-300 (ACE-Step only)" },
-            { name: "key_scale", type: "string", required: false, desc: "Key and scale (ACE-Step only)" },
-            { name: "inference_steps", type: "number", required: false, desc: "Inference steps, 1-200 (ACE-Step only)" },
-            { name: "guidance_scale", type: "number", required: false, desc: "Prompt guidance, 0-30 (ACE-Step only)" },
-            { name: "thinking", type: "boolean", required: false, desc: "LM thinking mode (ACE-Step only)" },
-            { name: "shift", type: "number", required: false, desc: "Timestep shift, 1-5 (ACE-Step only)" },
-            { name: "infer_method", type: "string", required: false, desc: "'ode' or 'sde' (ACE-Step only)" },
-            { name: "use_adg", type: "boolean", required: false, desc: "Adaptive Dual Guidance (ACE-Step only)" },
+            { name: "instrument", type: "string", required: false, desc: "Primary instrument" },
+            { name: "bpm", type: "number", required: false, desc: "Tempo in BPM, 30-300" },
+            { name: "key_scale", type: "string", required: false, desc: "Key and scale" },
+            { name: "inference_steps", type: "number", required: false, desc: "Inference steps, 1-200" },
+            { name: "guidance_scale", type: "number", required: false, desc: "Prompt guidance, 0-30" },
+            { name: "thinking", type: "boolean", required: false, desc: "LM thinking mode" },
+            { name: "shift", type: "number", required: false, desc: "Timestep shift, 1-5" },
+            { name: "infer_method", type: "string", required: false, desc: "'ode' or 'sde'" },
+            { name: "use_adg", type: "boolean", required: false, desc: "Adaptive Dual Guidance" },
             { name: "seed", type: "number", required: false, desc: "Fixed seed for reproducibility (-1 for random)" },
           ].map((p) => (
             <div key={p.name} className="flex items-start gap-3 p-2.5 rounded-md flex-wrap">
@@ -453,20 +320,15 @@ function PlaygroundTab() {
   const { toast } = useToast();
   const [response, setResponse] = useState<string | null>(null);
   const [showAdvancedAceStep, setShowAdvancedAceStep] = useState(false);
-  const [showAdvancedHeartMuLa, setShowAdvancedHeartMuLa] = useState(false);
 
   const form = useForm<PlaygroundFormValues>({
     resolver: zodResolver(playgroundSchema),
     defaultValues: {
-      engine: "ace-step",
       prompt: "",
       lyrics: "",
       duration: 30,
       style: "",
       instrument: "",
-      tags: "",
-      negative_tags: "",
-      title: "",
       bpm: undefined,
       key_scale: "",
       time_signature: "",
@@ -478,48 +340,30 @@ function PlaygroundTab() {
       infer_method: "ode",
       use_adg: false,
       seed: -1,
-      hm_temperature: 1.0,
-      hm_cfg_scale: 1.5,
-      hm_topk: 50,
     },
   });
-
-  const selectedEngine = useWatch({ control: form.control, name: "engine" });
-  const isHeartMuLa = selectedEngine === "heartmula";
-  const isYuE = selectedEngine === "yue" || selectedEngine === "yue-pp";
-  const isDiffRhythm = selectedEngine === "diffrhythm" || selectedEngine === "diffrhythm-pp";
 
   const mutation = useMutation({
     mutationFn: async (data: PlaygroundFormValues) => {
       const body: Record<string, any> = {
-        engine: data.engine,
+        engine: "ace-step",
         prompt: data.prompt.trim(),
         duration: data.duration,
       };
       if (data.lyrics?.trim()) body.lyrics = data.lyrics.trim();
       if (data.style) body.style = data.style;
       if (data.seed !== -1) body.seed = data.seed;
-
-      if (isHeartMuLa) {
-        if (data.tags?.trim()) body.tags = data.tags.trim();
-        if (data.negative_tags?.trim()) body.negative_tags = data.negative_tags.trim();
-        if (data.title?.trim()) body.title = data.title.trim();
-        body.temperature = data.hm_temperature;
-        body.cfg_scale = data.hm_cfg_scale;
-        body.topk = data.hm_topk;
-      } else {
-        if (data.instrument) body.instrument = data.instrument;
-        if (data.bpm) body.bpm = data.bpm;
-        if (data.key_scale) body.key_scale = data.key_scale;
-        if (data.time_signature) body.time_signature = data.time_signature;
-        if (data.vocal_language) body.vocal_language = data.vocal_language;
-        body.inference_steps = data.inference_steps;
-        body.guidance_scale = data.guidance_scale;
-        if (data.thinking) body.thinking = true;
-        if (data.shift !== 3) body.shift = data.shift;
-        if (data.infer_method !== "ode") body.infer_method = data.infer_method;
-        if (data.use_adg) body.use_adg = true;
-      }
+      if (data.instrument) body.instrument = data.instrument;
+      if (data.bpm) body.bpm = data.bpm;
+      if (data.key_scale) body.key_scale = data.key_scale;
+      if (data.time_signature) body.time_signature = data.time_signature;
+      if (data.vocal_language) body.vocal_language = data.vocal_language;
+      body.inference_steps = data.inference_steps;
+      body.guidance_scale = data.guidance_scale;
+      if (data.thinking) body.thinking = true;
+      if (data.shift !== 3) body.shift = data.shift;
+      if (data.infer_method !== "ode") body.infer_method = data.infer_method;
+      if (data.use_adg) body.use_adg = true;
 
       const res = await apiRequest("POST", "/api/generate", body);
       return await res.json();
@@ -546,139 +390,20 @@ function PlaygroundTab() {
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-5">
           <FormField
             control={form.control}
-            name="engine"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Engine</FormLabel>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => field.onChange("ace-step")}
-                    className={`flex items-center gap-2 p-3 rounded-md border text-left transition-colors ${
-                      field.value === "ace-step"
-                        ? "border-blue-500 bg-blue-500/10"
-                        : "border-border hover-elevate"
-                    }`}
-                    data-testid="button-engine-ace-step"
-                  >
-                    <Guitar className={`w-5 h-5 shrink-0 ${field.value === "ace-step" ? "text-blue-500" : "text-muted-foreground"}`} />
-                    <div>
-                      <div className="text-sm font-medium">ACE-Step</div>
-                      <div className="text-xs text-muted-foreground">Instrumental & vocals</div>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => field.onChange("heartmula")}
-                    className={`flex items-center gap-2 p-3 rounded-md border text-left transition-colors ${
-                      field.value === "heartmula"
-                        ? "border-pink-500 bg-pink-500/10"
-                        : "border-border hover-elevate"
-                    }`}
-                    data-testid="button-engine-heartmula"
-                  >
-                    <Mic className={`w-5 h-5 shrink-0 ${field.value === "heartmula" ? "text-pink-500" : "text-muted-foreground"}`} />
-                    <div>
-                      <div className="text-sm font-medium">HeartMuLa</div>
-                      <div className="text-xs text-muted-foreground">Full songs with vocals</div>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => field.onChange("yue")}
-                    className={`flex items-center gap-2 p-3 rounded-md border text-left transition-colors ${
-                      field.value === "yue"
-                        ? "border-purple-500 bg-purple-500/10"
-                        : "border-border hover-elevate"
-                    }`}
-                    data-testid="button-engine-yue"
-                  >
-                    <Music className={`w-5 h-5 shrink-0 ${field.value === "yue" ? "text-purple-500" : "text-muted-foreground"}`} />
-                    <div>
-                      <div className="text-sm font-medium">YuE</div>
-                      <div className="text-xs text-muted-foreground">Lyrics to song</div>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => field.onChange("yue-pp")}
-                    className={`flex items-center gap-2 p-3 rounded-md border text-left transition-colors ${
-                      field.value === "yue-pp"
-                        ? "border-green-500 bg-green-500/10"
-                        : "border-border hover-elevate"
-                    }`}
-                    data-testid="button-engine-yue-pp"
-                  >
-                    <Wand2 className={`w-5 h-5 shrink-0 ${field.value === "yue-pp" ? "text-green-500" : "text-muted-foreground"}`} />
-                    <div>
-                      <div className="text-sm font-medium">YuE + PP</div>
-                      <div className="text-xs text-muted-foreground">Lyrics to mastered song</div>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => field.onChange("diffrhythm")}
-                    className={`flex items-center gap-2 p-3 rounded-md border text-left transition-colors ${
-                      field.value === "diffrhythm"
-                        ? "border-orange-500 bg-orange-500/10"
-                        : "border-border hover-elevate"
-                    }`}
-                    data-testid="button-engine-diffrhythm"
-                  >
-                    <Zap className={`w-5 h-5 shrink-0 ${field.value === "diffrhythm" ? "text-orange-500" : "text-muted-foreground"}`} />
-                    <div>
-                      <div className="text-sm font-medium">DiffRhythm</div>
-                      <div className="text-xs text-muted-foreground">Fast full songs</div>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => field.onChange("diffrhythm-pp")}
-                    className={`flex items-center gap-2 p-3 rounded-md border text-left transition-colors ${
-                      field.value === "diffrhythm-pp"
-                        ? "border-amber-500 bg-amber-500/10"
-                        : "border-border hover-elevate"
-                    }`}
-                    data-testid="button-engine-diffrhythm-pp"
-                  >
-                    <Layers className={`w-5 h-5 shrink-0 ${field.value === "diffrhythm-pp" ? "text-amber-500" : "text-muted-foreground"}`} />
-                    <div>
-                      <div className="text-sm font-medium">DiffRhythm + Pipeline</div>
-                      <div className="text-xs text-muted-foreground">Modular mastered output</div>
-                    </div>
-                  </button>
-                </div>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
             name="prompt"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Prompt *</FormLabel>
                 <FormControl>
                   <Textarea
-                    placeholder={isHeartMuLa
-                      ? "Describe the song: mood, genre, vocal style, instrumentation..."
-                      : isYuE
-                        ? "Describe the song style: genre tags like 'pop rock, female vocal, upbeat'..."
-                        : isDiffRhythm
-                          ? "Describe the song style and mood. Add lyrics below for vocal tracks..."
-                          : "Describe the music: genre, instruments, mood, tempo feel..."
-                    }
+                    placeholder="Describe the music: genre, instruments, mood, tempo feel..."
                     className="resize-none min-h-[100px]"
                     data-testid="input-prompt"
                     {...field}
                   />
                 </FormControl>
                 <FormDescription className="text-xs">
-                  {isHeartMuLa
-                    ? 'e.g. "A dreamy love ballad with emotional female vocals and piano"'
-                    : 'e.g. "Upbeat indie pop with jangly guitars and energetic female vocals"'
-                  }
+                  e.g. "Upbeat indie pop with jangly guitars and energetic female vocals"
                 </FormDescription>
                 <FormMessage />
               </FormItem>
@@ -690,7 +415,7 @@ function PlaygroundTab() {
             name="lyrics"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Lyrics {isYuE ? "(required for YuE)" : isHeartMuLa ? "(recommended)" : "(optional)"}</FormLabel>
+                <FormLabel>Lyrics (optional)</FormLabel>
                 <FormControl>
                   <Textarea
                     placeholder={"[Verse 1]\nYour lyrics here...\n\n[Chorus]\nChorus lyrics..."}
@@ -704,114 +429,52 @@ function PlaygroundTab() {
             )}
           />
 
-          {isHeartMuLa ? (
-            <>
-              <FormField
-                control={form.control}
-                name="title"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Track Title (optional)</FormLabel>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField
+              control={form.control}
+              name="style"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Style</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
                     <FormControl>
-                      <Input
-                        placeholder="My Song Title"
-                        data-testid="input-title"
-                        {...field}
-                      />
+                      <SelectTrigger data-testid="select-style">
+                        <SelectValue placeholder="Select style" />
+                      </SelectTrigger>
                     </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="tags"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Style Tags</FormLabel>
+                    <SelectContent>
+                      {STYLES.map((s) => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="instrument"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Instrument</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
                     <FormControl>
-                      <Input
-                        placeholder="Pop, female vocals, emotional, piano, ballad"
-                        data-testid="input-tags"
-                        {...field}
-                      />
+                      <SelectTrigger data-testid="select-instrument">
+                        <SelectValue placeholder="Select instrument" />
+                      </SelectTrigger>
                     </FormControl>
-                    <FormDescription className="text-xs">
-                      Comma-separated style tags for genre, mood, instruments, vocal type
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="negative_tags"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Negative Tags (optional)</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="drums, distortion, noise, harsh"
-                        data-testid="input-negative-tags"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription className="text-xs">
-                      Styles/elements to exclude from the generation
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </>
-          ) : (
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="style"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Style</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-style">
-                          <SelectValue placeholder="Select style" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {STYLES.map((s) => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="instrument"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Instrument</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-instrument">
-                          <SelectValue placeholder="Select instrument" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {INSTRUMENTS.map((i) => (
-                          <SelectItem key={i} value={i}>{i}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-          )}
+                    <SelectContent>
+                      {INSTRUMENTS.map((i) => (
+                        <SelectItem key={i} value={i}>{i}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
 
           <FormField
             control={form.control}
@@ -827,65 +490,63 @@ function PlaygroundTab() {
                     value={[field.value]}
                     onValueChange={([v]) => field.onChange(v)}
                     min={10}
-                    max={isHeartMuLa ? 300 : 300}
+                    max={300}
                     step={5}
                     data-testid="slider-duration"
                   />
                 </FormControl>
                 <div className="flex justify-between">
                   <span className="text-xs text-muted-foreground">10s</span>
-                  <span className="text-xs text-muted-foreground">{isHeartMuLa ? "300s (5 min)" : "300s"}</span>
+                  <span className="text-xs text-muted-foreground">300s</span>
                 </div>
                 <FormMessage />
               </FormItem>
             )}
           />
 
-          {!isHeartMuLa && (
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="bpm"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>BPM (optional)</FormLabel>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField
+              control={form.control}
+              name="bpm"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>BPM (optional)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      placeholder="Auto"
+                      data-testid="input-bpm"
+                      value={field.value ?? ""}
+                      onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="vocal_language"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Vocal Language</FormLabel>
+                  <Select value={field.value || ""} onValueChange={(v) => field.onChange(v || "")}>
                     <FormControl>
-                      <Input
-                        type="number"
-                        placeholder="Auto"
-                        data-testid="input-bpm"
-                        value={field.value ?? ""}
-                        onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
-                      />
+                      <SelectTrigger data-testid="select-vocal-language">
+                        <SelectValue placeholder="Auto" />
+                      </SelectTrigger>
                     </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="vocal_language"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Vocal Language</FormLabel>
-                    <Select value={field.value || ""} onValueChange={(v) => field.onChange(v || "")}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-vocal-language">
-                          <SelectValue placeholder="Auto" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {VOCAL_LANGUAGES.map((l) => (
-                          <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-          )}
+                    <SelectContent>
+                      {VOCAL_LANGUAGES.map((l) => (
+                        <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <FormField
@@ -910,102 +571,7 @@ function PlaygroundTab() {
             />
           </div>
 
-          {isHeartMuLa && (
-            <div>
-              <button
-                type="button"
-                className="flex items-center gap-2 text-sm text-muted-foreground hover-elevate rounded-md px-2 py-1.5 w-full"
-                onClick={() => setShowAdvancedHeartMuLa(!showAdvancedHeartMuLa)}
-                data-testid="button-toggle-hm-advanced"
-              >
-                <Settings className="w-4 h-4" />
-                <span>Quality Settings</span>
-                {showAdvancedHeartMuLa ? <ChevronUp className="w-4 h-4 ml-auto" /> : <ChevronDown className="w-4 h-4 ml-auto" />}
-              </button>
-
-              {showAdvancedHeartMuLa && (
-                <div className="mt-3 space-y-4 border rounded-md p-4">
-                  <FormField
-                    control={form.control}
-                    name="hm_temperature"
-                    render={({ field }) => (
-                      <FormItem>
-                        <div className="flex items-center justify-between">
-                          <FormLabel>Temperature</FormLabel>
-                          <span className="text-sm text-muted-foreground font-mono">{field.value.toFixed(1)}</span>
-                        </div>
-                        <FormControl>
-                          <Slider
-                            value={[field.value]}
-                            onValueChange={([v]) => field.onChange(v)}
-                            min={0.1}
-                            max={2.0}
-                            step={0.1}
-                            data-testid="slider-hm-temperature"
-                          />
-                        </FormControl>
-                        <p className="text-xs text-muted-foreground">Controls creativity: lower = more predictable, higher = more varied (default: 1.0)</p>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="hm_cfg_scale"
-                    render={({ field }) => (
-                      <FormItem>
-                        <div className="flex items-center justify-between">
-                          <FormLabel>CFG Scale</FormLabel>
-                          <span className="text-sm text-muted-foreground font-mono">{field.value.toFixed(1)}</span>
-                        </div>
-                        <FormControl>
-                          <Slider
-                            value={[field.value]}
-                            onValueChange={([v]) => field.onChange(v)}
-                            min={0}
-                            max={10}
-                            step={0.1}
-                            data-testid="slider-hm-cfg-scale"
-                          />
-                        </FormControl>
-                        <p className="text-xs text-muted-foreground">Prompt adherence: higher = follows prompt more closely (default: 1.5)</p>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="hm_topk"
-                    render={({ field }) => (
-                      <FormItem>
-                        <div className="flex items-center justify-between">
-                          <FormLabel>Top-K Sampling</FormLabel>
-                          <span className="text-sm text-muted-foreground font-mono">{field.value}</span>
-                        </div>
-                        <FormControl>
-                          <Slider
-                            value={[field.value]}
-                            onValueChange={([v]) => field.onChange(v)}
-                            min={1}
-                            max={500}
-                            step={1}
-                            data-testid="slider-hm-topk"
-                          />
-                        </FormControl>
-                        <p className="text-xs text-muted-foreground">Limits token choices: lower = more focused, higher = more diverse (default: 50)</p>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-          {!isHeartMuLa && (
-            <div>
+          <div>
               <button
                 type="button"
                 className="flex items-center gap-2 text-sm text-muted-foreground hover-elevate rounded-md px-2 py-1.5 w-full"
@@ -1208,7 +774,6 @@ function PlaygroundTab() {
                 </div>
               )}
             </div>
-          )}
 
           <Button
             type="submit"
@@ -1266,9 +831,7 @@ function useEstimatedProgress(job: Job): number | null {
   const createdMs = new Date(job.createdAt).getTime();
   const elapsedSec = (now - createdMs) / 1000;
 
-  const estimatedTotalSec = job.engine === "heartmula"
-    ? Math.max(job.duration * 8, 120)
-    : Math.max(job.duration * 3, 60);
+  const estimatedTotalSec = Math.max(job.duration * 3, 60);
 
   const ratio = elapsedSec / estimatedTotalSec;
   const progress = Math.round(95 * (1 - Math.exp(-2.5 * ratio)));
@@ -1328,9 +891,7 @@ function JobRow({ job }: { job: Job }) {
                 className="h-full rounded-full transition-all duration-1000 ease-out"
                 style={{
                   width: `${estimatedProgress}%`,
-                  background: job.engine === "heartmula"
-                    ? "linear-gradient(90deg, #ec4899, #f472b6)"
-                    : "linear-gradient(90deg, #3b82f6, #60a5fa)",
+                  background: "linear-gradient(90deg, #3b82f6, #60a5fa)",
                 }}
               />
             </div>
@@ -1564,58 +1125,13 @@ function AdminTab() {
     refetchInterval: 15000,
   });
 
-  const { data: gpuSettings, isLoading: gpuLoading, refetch: refetchGpu } = useQuery<any>({
-    queryKey: ["/api/heartmula/gpu-settings"],
-    refetchInterval: 15000,
-  });
-
   const { data: health, refetch: refetchHealth } = useQuery<any>({
     queryKey: ["/api/health"],
     refetchInterval: 10000,
   });
 
-  const reloadMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/heartmula/reload-gpu"),
-    onSuccess: async (res) => {
-      const data = await res.json();
-      toast({ title: data.success ? "GPU model reloaded" : "Reload failed", description: data.message, variant: data.success ? "default" : "destructive" });
-      refetchDiag();
-      refetchGpu();
-    },
-    onError: (err: any) => {
-      toast({ title: "Reload failed", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const scheduleReloadMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/heartmula/schedule-reload"),
-    onSuccess: async (res) => {
-      const data = await res.json();
-      toast({ title: "Reload scheduled", description: data.message });
-    },
-    onError: (err: any) => {
-      toast({ title: "Schedule failed", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const enforceGpuMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/heartmula/enforce-gpu"),
-    onSuccess: async (res) => {
-      const data = await res.json();
-      toast({
-        title: data.changed ? "GPU settings updated" : "Settings OK",
-        description: data.changed ? `Changed: ${JSON.stringify(data.changes)}${data.reloadScheduled ? " — reload scheduled" : ""}` : "All GPU settings are correct",
-      });
-      refetchGpu();
-    },
-    onError: (err: any) => {
-      toast({ title: "Enforce failed", description: err.message, variant: "destructive" });
-    },
-  });
-
   const refreshAll = () => {
     refetchDiag();
-    refetchGpu();
     refetchHealth();
   };
 
@@ -1645,11 +1161,10 @@ function AdminTab() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {[
           { label: "API", ok: health?.api, icon: Activity },
           { label: "ACE-Step", ok: health?.aceStep, icon: Guitar },
-          { label: "HeartMuLa", ok: health?.heartmula, icon: Mic },
         ].map((s) => (
           <Card key={s.label} className="p-3 flex items-center gap-3">
             <s.icon className={`w-4 h-4 ${s.ok ? "text-emerald-500" : "text-destructive"}`} />
@@ -1663,63 +1178,13 @@ function AdminTab() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4">
         <PodCard
           name="ACE-Step"
           icon={Guitar}
           color="text-blue-500 dark:text-blue-400"
           data={diagnostics?.aceStep}
         />
-        <PodCard
-          name="HeartMuLa"
-          icon={Mic}
-          color="text-pink-500 dark:text-pink-400"
-          data={diagnostics?.heartmula}
-          gpuSettings={gpuSettings}
-        />
-      </div>
-
-      <div>
-        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-          <Cpu className="w-4 h-4" /> HeartMuLa GPU Controls
-        </h3>
-        <Card className="p-4">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => reloadMutation.mutate()}
-              disabled={reloadMutation.isPending}
-              data-testid="button-reload-gpu"
-            >
-              {reloadMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RotateCcw className="w-4 h-4 mr-1" />}
-              Reload Model
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => scheduleReloadMutation.mutate()}
-              disabled={scheduleReloadMutation.isPending}
-              data-testid="button-schedule-reload"
-            >
-              {scheduleReloadMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Clock className="w-4 h-4 mr-1" />}
-              Schedule Reload
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => enforceGpuMutation.mutate()}
-              disabled={enforceGpuMutation.isPending}
-              data-testid="button-enforce-gpu"
-            >
-              {enforceGpuMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Shield className="w-4 h-4 mr-1" />}
-              Enforce GPU Settings
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground mt-2">
-            Reload reloads model on GPU. Schedule queues a reload for when all jobs finish. Enforce checks and fixes GPU-only settings.
-          </p>
-        </Card>
       </div>
 
       {diagnostics && (
@@ -1737,7 +1202,6 @@ function AdminTab() {
 }
 
 const compareFormSchema = z.object({
-  engine: z.enum(["ace-step", "heartmula", "yue", "diffrhythm"]).default("yue"),
   prompt: z.string().min(1, "Prompt is required"),
   lyrics: z.string().optional().default(""),
   tags: z.string().optional().default(""),
@@ -1745,7 +1209,6 @@ const compareFormSchema = z.object({
   title: z.string().optional().default(""),
   duration: z.number().min(10).max(300).default(30),
   sunoModel: z.enum(["V5", "V4_5ALL", "V4_5PLUS", "V4_5", "V4"]).default("V5"),
-  enablePP: z.boolean().default(true),
 });
 
 function CompareTab() {
@@ -1755,7 +1218,6 @@ function CompareTab() {
   const compareForm = useForm<z.infer<typeof compareFormSchema>>({
     resolver: zodResolver(compareFormSchema),
     defaultValues: {
-      engine: "yue",
       prompt: "",
       lyrics: "",
       tags: "",
@@ -1763,7 +1225,6 @@ function CompareTab() {
       title: "",
       duration: 30,
       sunoModel: "V5",
-      enablePP: true,
     },
   });
 
@@ -1784,7 +1245,7 @@ function CompareTab() {
 
   const compareMutation = useMutation({
     mutationFn: async (data: any) => {
-      const res = await apiRequest("POST", "/api/compare", data);
+      const res = await apiRequest("POST", "/api/compare", { ...data, engine: "ace-step" });
       return res.json();
     },
     onSuccess: (data: any) => {
@@ -1798,8 +1259,8 @@ function CompareTab() {
   });
 
   const generateIdeaMutation = useMutation({
-    mutationFn: async (engine: string) => {
-      const res = await apiRequest("POST", "/api/generate-song-idea", { engine });
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/generate-song-idea", { engine: "ace-step" });
       return res.json();
     },
     onSuccess: (idea: any) => {
@@ -1831,7 +1292,7 @@ function CompareTab() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => generateIdeaMutation.mutate(compareForm.getValues("engine"))}
+              onClick={() => generateIdeaMutation.mutate()}
               disabled={generateIdeaMutation.isPending}
               data-testid="button-generate-idea"
             >
@@ -1847,54 +1308,6 @@ function CompareTab() {
             onSubmit={compareForm.handleSubmit((data) => compareMutation.mutate(data))}
             className="space-y-4"
           >
-            <div>
-              <label className="text-xs font-medium mb-1 block">Engine</label>
-              <Select
-                value={compareForm.watch("engine")}
-                onValueChange={(v) => compareForm.setValue("engine", v as any)}
-              >
-                <SelectTrigger data-testid="select-compare-engine">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="yue">YuE (Lyrics-to-Song)</SelectItem>
-                  <SelectItem value="heartmula">HeartMuLa</SelectItem>
-                  <SelectItem value="ace-step">ACE-Step</SelectItem>
-                  <SelectItem value="diffrhythm">DiffRhythm (Fast Full Songs)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {compareForm.watch("engine") === "yue" && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="enablePP"
-                  checked={compareForm.watch("enablePP")}
-                  onChange={(e) => compareForm.setValue("enablePP", e.target.checked)}
-                  className="rounded border-input"
-                />
-                <label htmlFor="enablePP" className="text-xs font-medium cursor-pointer">
-                  Include YuE+PP (Post-Processing: mastering + RVC)
-                </label>
-              </div>
-            )}
-
-            {compareForm.watch("engine") === "diffrhythm" && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="enablePP"
-                  checked={compareForm.watch("enablePP")}
-                  onChange={(e) => compareForm.setValue("enablePP", e.target.checked)}
-                  className="rounded border-input"
-                />
-                <label htmlFor="enablePP" className="text-xs font-medium cursor-pointer">
-                  Include DiffRhythm+Pipeline (Demucs stems + Mastering)
-                </label>
-              </div>
-            )}
-
             <div>
               <label className="text-xs font-medium mb-1 block">Suno Model</label>
               <Select
@@ -1982,9 +1395,7 @@ function CompareTab() {
               ) : (
                 <Zap className="w-4 h-4 mr-2" />
               )}
-              {compareForm.watch("enablePP") && compareForm.watch("engine") === "yue"
-                ? "Start 3-Way Comparison"
-                : "Start A/B Comparison"}
+              Start A/B Comparison
             </Button>
           </form>
         </Card>
@@ -2133,7 +1544,7 @@ function ComparisonResult({ comparison }: { comparison: any }) {
                 <div className="flex items-center gap-2 mb-3">
                   <Badge variant="outline" className="text-xs bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20">
                     <Wand2 className="w-3 h-3 mr-1" />
-                    {comparison.engine === "yue" ? "YuE" : comparison.engine} + PP
+                    ACE-Step + PP
                   </Badge>
                   <span className="text-xs text-muted-foreground">Mastered</span>
                   {analysis?.overallScore?.oursPP && (
@@ -2268,11 +1679,11 @@ export default function Home() {
             </div>
             <div>
               <h1 className="text-sm font-semibold leading-tight">Music Gen API</h1>
-              <p className="text-xs text-muted-foreground leading-tight">Multi-Engine</p>
+              <p className="text-xs text-muted-foreground leading-tight">ACE-Step</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="font-mono text-xs">multi-engine</Badge>
+            <Badge variant="outline" className="font-mono text-xs">ace-step</Badge>
           </div>
         </div>
       </header>
@@ -2283,18 +1694,17 @@ export default function Home() {
             Music Generation API
           </h2>
           <p className="text-muted-foreground max-w-2xl">
-            Generate music using ACE-Step v1.5, HeartMuLa, YuE, or DiffRhythm — with optional modular post-processing pipelines.
-            All engines run on RunPod GPU infrastructure.
+            Generate music using ACE-Step v1.5 with fine-grained DiT controls.
+            Runs on RunPod GPU infrastructure.
           </p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           {[
             { icon: Guitar, title: "ACE-Step v1.5", desc: "Fine-grained DiT music generation", color: "text-blue-500 dark:text-blue-400" },
-            { icon: Mic, title: "HeartMuLa", desc: "Full songs with vocals & lyrics", color: "text-pink-500 dark:text-pink-400" },
-            { icon: Music, title: "YuE", desc: "Lyrics-to-song generation", color: "text-purple-500 dark:text-purple-400" },
-            { icon: Zap, title: "DiffRhythm", desc: "Fast latent diffusion songs", color: "text-orange-500 dark:text-orange-400" },
-            { icon: Layers, title: "Modular Pipeline", desc: "Demucs + Matchering mastering", color: "text-amber-500 dark:text-amber-400" },
+            { icon: Music, title: "Instrumental & Vocal", desc: "Generate any style of music", color: "text-purple-500 dark:text-purple-400" },
+            { icon: Sparkles, title: "Thinking Mode", desc: "LM-enhanced audio quality", color: "text-amber-500 dark:text-amber-400" },
+            { icon: Zap, title: "GPU Accelerated", desc: "RunPod GPU infrastructure", color: "text-orange-500 dark:text-orange-400" },
           ].map((f) => (
             <Card key={f.title} className="p-4">
               <f.icon className={`w-5 h-5 ${f.color} mb-2`} />
@@ -2349,7 +1759,7 @@ export default function Home() {
       <footer className="border-t mt-12">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex items-center justify-between flex-wrap gap-2">
           <p className="text-xs text-muted-foreground">
-            Powered by ACE-Step v1.5 + HeartMuLa on RunPod
+            Powered by ACE-Step v1.5 on RunPod
           </p>
           <div className="flex items-center gap-3">
             <a
@@ -2359,14 +1769,6 @@ export default function Home() {
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               ACE-Step
-            </a>
-            <a
-              href="https://github.com/HeartMuLa/heartlib"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              HeartMuLa
             </a>
             <a
               href="https://www.runpod.io/"

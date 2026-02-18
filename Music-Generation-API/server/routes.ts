@@ -9,32 +9,11 @@ import { log } from "./index";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { requireBearerAuth } from "./middleware/auth";
-import path from "path";
-import fs from "fs";
 
 export async function registerRoutes(
   _httpServer: Server,
   app: Express,
 ): Promise<Server> {
-  // ===== PUBLIC =====
-
-  app.get("/api/scripts/yue-server", (_req, res) => {
-    const scriptPath = path.resolve(process.cwd(), "scripts/yue_api_server.py");
-    if (!fs.existsSync(scriptPath)) {
-      return res.status(404).json({ error: "Script not found" });
-    }
-    res.setHeader("Content-Type", "text/plain");
-    res.sendFile(scriptPath);
-  });
-
-  app.get("/api/scripts/diffrhythm-server", (_req, res) => {
-    const scriptPath = path.resolve(process.cwd(), "scripts/diffrhythm_api_server.py");
-    if (!fs.existsSync(scriptPath)) {
-      return res.status(404).json({ error: "Script not found" });
-    }
-    res.setHeader("Content-Type", "text/plain");
-    res.sendFile(scriptPath);
-  });
 
   app.get("/api/engines", async (_req, res) => {
     res.json({
@@ -44,40 +23,28 @@ export async function registerRoutes(
 
   app.get("/api/health", async (_req, res) => {
     const aceStepEngine = registry.get("ace-step");
-    const heartmulaEngine = registry.get("heartmula");
-    const yueEngine = registry.get("yue");
 
-    const [aceStepHealthy, heartmulaHealthy, yueHealthy] = await Promise.all([
-      aceStepEngine?.checkHealth() ?? Promise.resolve(false),
-      heartmulaEngine?.checkHealth() ?? Promise.resolve(false),
-      yueEngine?.checkHealth() ?? Promise.resolve(false),
-    ]);
+    const aceStepHealthy = await (aceStepEngine?.checkHealth() ?? Promise.resolve(false));
 
     res.json({
       api: true,
       aceStep: aceStepHealthy,
       aceStepConfigured: aceStepEngine?.isConfigured() ?? false,
-      heartmula: heartmulaHealthy,
-      heartmulaConfigured: heartmulaEngine?.isConfigured() ?? false,
-      yue: yueHealthy,
-      yueConfigured: yueEngine?.isConfigured() ?? false,
     });
   });
-
-  // ===== GENERATION =====
 
   app.post("/api/generate", requireBearerAuth, async (req, res) => {
     try {
       const parsed = createJobSchema.parse(req.body);
-      const engineId = parsed.engine || "ace-step";
+      const engineId = "ace-step";
 
       const musicEngine = registry.get(engineId);
       if (!musicEngine) {
-        return res.status(400).json({ error: `Unknown engine: ${engineId}` });
+        return res.status(400).json({ error: `Engine not available` });
       }
 
       if (!musicEngine.isConfigured()) {
-        return res.status(503).json({ error: `Engine ${engineId} not configured` });
+        return res.status(503).json({ error: `Engine not configured` });
       }
 
       const job = await storage.createJob({
@@ -90,15 +57,6 @@ export async function registerRoutes(
         tempo: parsed.bpm,
         inputParams: parsed,
       });
-
-      // Специальная проверка для HeartMuLa (временный хак для GPU)
-      if (engineId === "heartmula") {
-        const heartmula = await import("./heartmula");
-        const gpuCheck = await heartmula.verifyGpuAndReload();
-        if (!gpuCheck.success) {
-          return res.status(503).json({ error: gpuCheck.message });
-        }
-      }
 
       const result = await musicEngine.submitTask({
         prompt: parsed.prompt,
@@ -131,8 +89,6 @@ export async function registerRoutes(
     }
   });
 
-  // ===== JOBS =====
-
   app.get("/api/jobs", requireBearerAuth, async (_req, res) => {
     res.json(await storage.getAllJobs());
   });
@@ -141,7 +97,6 @@ export async function registerRoutes(
     const job = await storage.getJob(req.params.id);
     if (!job) return res.status(404).json({ error: "Job not found" });
 
-    // Poll engine if job is still in progress
     if (job.status === "IN_PROGRESS" && job.runpodJobId) {
       try {
         const musicEngine = registry.get(job.engine);
@@ -189,107 +144,14 @@ export async function registerRoutes(
     res.send(result.buffer);
   });
 
-  // ===== DIAGNOSTICS =====
-
   app.get("/api/pod/diagnostics", requireBearerAuth, async (_req, res) => {
     const aceStepEngine = registry.get("ace-step");
-    const heartmulaEngine = registry.get("heartmula");
-    const yueEngine = registry.get("yue");
-
     const diagnostics: Record<string, any> = {};
-
     if (aceStepEngine) {
       diagnostics.aceStep = await aceStepEngine.getDiagnostics();
     }
-    if (heartmulaEngine) {
-      diagnostics.heartmula = await heartmulaEngine.getDiagnostics();
-    }
-    if (yueEngine) {
-      diagnostics.yue = await yueEngine.getDiagnostics();
-    }
-
     res.json(diagnostics);
   });
-
-  // ===== HEARTMULA CONTROL =====
-  // Note: These endpoints use HeartMuLa-specific GPU functions not in the universal interface
-
-  app.post(
-    "/api/heartmula/reload-gpu",
-    requireBearerAuth,
-    async (_req, res) => {
-      const heartmula = await import("./heartmula");
-      res.json(await heartmula.reloadGpuModel());
-    },
-  );
-
-  app.post(
-    "/api/heartmula/enforce-gpu",
-    requireBearerAuth,
-    async (_req, res) => {
-      const heartmula = await import("./heartmula");
-      res.json(await heartmula.enforceGpuSettings());
-    },
-  );
-
-  app.post(
-    "/api/heartmula/schedule-reload",
-    requireBearerAuth,
-    async (_req, res) => {
-      const heartmula = await import("./heartmula");
-      heartmula.schedulGpuReload();
-      res.json({ success: true });
-    },
-  );
-
-  app.get(
-    "/api/heartmula/gpu-settings",
-    requireBearerAuth,
-    async (_req, res) => {
-      const heartmula = await import("./heartmula");
-      res.json(await heartmula.getGpuSettings());
-    },
-  );
-
-  // ===== YUE ADMIN =====
-
-  app.get("/api/yue/deploy-command", requireBearerAuth, async (req, res) => {
-    const host = req.get("host") || "localhost:5000";
-    const protocol = req.protocol === "https" ? "https" : (host.includes("replit") ? "https" : "http");
-    const scriptUrl = `${protocol}://${host}/api/yue/server-script`;
-    const command = `pkill -f "python.*gradio_app\\|python.*interface" 2>/dev/null; curl -s "${scriptUrl}" -o /workspace/yue_api_server.py && nohup python /workspace/yue_api_server.py > /workspace/yue_api.log 2>&1 &`;
-    res.json({
-      message: "Run this command in RunPod Web Terminal to deploy the YuE API server",
-      command,
-      scriptUrl,
-      note: "This stops Gradio and starts our lightweight API server on port 8000",
-    });
-  });
-
-  app.get("/api/yue/diagnostics", requireBearerAuth, async (_req, res) => {
-    const yue = await import("./yue");
-    res.json(await yue.getPodDiagnostics());
-  });
-
-  app.get("/api/yue/server-script", async (_req, res) => {
-    const fs = await import("fs");
-    const path = await import("path");
-    const possiblePaths = [
-      path.join(process.cwd(), "scripts", "yue_api_server.py"),
-      path.join(process.cwd(), "Music-Generation-API", "scripts", "yue_api_server.py"),
-    ];
-    for (const scriptPath of possiblePaths) {
-      if (fs.existsSync(scriptPath)) {
-        const script = fs.readFileSync(scriptPath, "utf-8");
-        res.setHeader("Content-Type", "text/plain");
-        res.send(script);
-        return;
-      }
-    }
-    res.status(404).json({ error: "Script not found" });
-  });
-
-  // ===== COMPARISON =====
 
   app.post("/api/compare", requireBearerAuth, async (req, res) => {
     const parsed = createComparisonSchema.parse(req.body);
@@ -316,26 +178,15 @@ export async function registerRoutes(
 
       const source = req.params.source;
 
-      if (source === "ours" || source === "ours_pp") {
-        const audioUrl = source === "ours_pp" ? cmp.ourPpAudioUrl : cmp.ourAudioUrl;
-        if (!audioUrl) {
-          return res.status(404).json({ error: `No ${source} audio available` });
+      if (source === "ours") {
+        if (!cmp.ourAudioUrl) {
+          return res.status(404).json({ error: "No audio available" });
         }
-
-        let engineId = cmp.engine;
-        if (source === "ours_pp") {
-          if (cmp.engine === "diffrhythm") {
-            engineId = "diffrhythm-pp";
-          } else {
-            engineId = "yue-pp";
-          }
-        }
-        const musicEngine = registry.get(engineId) || registry.get(cmp.engine);
+        const musicEngine = registry.get(cmp.engine);
         if (!musicEngine) {
-          return res.status(500).json({ error: `Engine ${engineId} not found` });
+          return res.status(500).json({ error: `Engine not found` });
         }
-
-        const result = await musicEngine.fetchAudio(audioUrl);
+        const result = await musicEngine.fetchAudio(cmp.ourAudioUrl);
         res.setHeader("Content-Type", result.contentType);
         res.send(result.buffer);
       } else if (source === "suno") {
@@ -350,14 +201,12 @@ export async function registerRoutes(
     },
   );
 
-  // ===== SUNO / GEMINI =====
-
   app.get("/api/suno/credits", requireBearerAuth, async (_req, res) => {
     res.json(await suno.getCredits());
   });
 
   app.post("/api/generate-song-idea", requireBearerAuth, async (req, res) => {
-    res.json(await gemini.generateSongIdea(req.body?.engine || "heartmula"));
+    res.json(await gemini.generateSongIdea("ace-step"));
   });
 
   return _httpServer;

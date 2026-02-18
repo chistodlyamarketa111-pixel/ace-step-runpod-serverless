@@ -165,12 +165,10 @@ export interface SongIdea {
   negative_tags: string;
 }
 
-export async function generateSongIdea(engine: "ace-step" | "heartmula"): Promise<SongIdea> {
+export async function generateSongIdea(engine: string = "ace-step"): Promise<SongIdea> {
   log(`Generating song idea via Gemini for engine: ${engine}`, "gemini");
 
-  const engineContext = engine === "heartmula"
-    ? "HeartMuLa — a full-song AI generator that creates vocals with lyrics, supports style tags, negative tags, and durations up to 300 seconds. It excels at complete songs with singing."
-    : "ACE-Step v1.5 — an instrumental/vocal AI music generator that uses a caption-based prompt system and supports durations from 10-300 seconds. It handles both instrumental and vocal generation.";
+  const engineContext = "ACE-Step v1.5 — an instrumental/vocal AI music generator that uses a caption-based prompt system and supports durations from 10-600 seconds. It handles both instrumental and vocal generation.";
 
   const ideaPrompt = `You are a creative music producer AI. Generate a unique, interesting song idea for testing an AI music generation engine.
 

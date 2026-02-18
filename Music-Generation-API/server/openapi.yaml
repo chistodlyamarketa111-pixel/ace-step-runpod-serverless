@@ -3,8 +3,8 @@ info:
   title: SoundSeed Music Generation API
   version: 0.2.0
   description: |
-    REST API for generating music using open-source models (ACE-Step, HeartMuLa)
-    deployed on GPU farms (RunPod). Supports multiple engines via a universal registry.
+    REST API for generating music using ACE-Step v1.5 model
+    deployed on RunPod Serverless GPU infrastructure.
 
 servers:
   - url: /
@@ -75,10 +75,6 @@ components:
         aceStep:
           type: boolean
         aceStepConfigured:
-          type: boolean
-        heartmula:
-          type: boolean
-        heartmulaConfigured:
           type: boolean
 
     CreateGenerationRequest:
