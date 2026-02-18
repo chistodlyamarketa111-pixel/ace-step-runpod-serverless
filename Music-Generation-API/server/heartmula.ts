@@ -1,8 +1,6 @@
 import { log } from "./index";
 
-const HEARTMULA_POD_ID = process.env.HEARTMULA_POD_ID === "e5w9wl2vhcuwat" 
-  ? "vb787qolnhhdjz" 
-  : (process.env.HEARTMULA_POD_ID || "vb787qolnhhdjz");
+const HEARTMULA_POD_ID = process.env.HEARTMULA_POD_ID || "p3wb6225l89joa";
 
 if (!HEARTMULA_POD_ID) {
   console.warn("HEARTMULA_POD_ID not set - HeartMuLa integration will not work");
