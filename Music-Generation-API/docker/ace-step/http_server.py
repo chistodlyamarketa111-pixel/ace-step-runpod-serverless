@@ -258,7 +258,16 @@ if __name__ == "__main__":
     print(f"[ACE-Step] Pre-loading default model: {DEFAULT_MODEL}...")
     get_pipeline(DEFAULT_MODEL)
 
+    import socket
     port = int(os.environ.get("PORT", "8888"))
-    server = HTTPServer(("0.0.0.0", port), AceStepHandler)
+
+    class ReusableHTTPServer(HTTPServer):
+        allow_reuse_address = True
+        allow_reuse_port = True
+        def server_bind(self):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            super().server_bind()
+
+    server = ReusableHTTPServer(("0.0.0.0", port), AceStepHandler)
     print(f"[ACE-Step] Server ready on :{port}")
     server.serve_forever()
