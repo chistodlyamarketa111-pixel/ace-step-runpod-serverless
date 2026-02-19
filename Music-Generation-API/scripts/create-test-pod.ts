@@ -25,12 +25,16 @@ async function gql(query: string, variables: Record<string, any> = {}) {
 
 const action = process.argv[2] || "create";
 
+const REPLIT_SERVER_URL = "https://30ae1522-eccc-49e0-b335-f4d16f2f3093-00-3ixp57dkvat9h.picard.replit.dev";
+
 async function createPod() {
   const gpuId = process.argv[3] || "NVIDIA RTX A5000";
-  const imageName = process.argv[4] || "ruslanmusin/ace-step-serverless:latest";
+  const imageName = "runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04";
 
   console.log(`Creating pod with GPU: ${gpuId}`);
   console.log(`Docker image: ${imageName}`);
+
+  const startupScript = `bash -c 'apt-get update && apt-get install -y ffmpeg libsndfile1 && pip install flask huggingface_hub soundfile && pip install git+https://github.com/ACE-Step/ACE-Step.git && python3 -c "from huggingface_hub import snapshot_download as dl; import os; d=\\"/workspace/checkpoints\\"; os.makedirs(d,exist_ok=True); dl(\\"ACE-Step/Ace-Step1.5\\",local_dir=d); dl(\\"ACE-Step/acestep-v15-sft\\",local_dir=d+\\"/acestep-v15-sft\\"); dl(\\"ACE-Step/acestep-v15-base\\",local_dir=d+\\"/acestep-v15-base\\"); dl(\\"ACE-Step/acestep-v15-turbo-shift3\\",local_dir=d+\\"/acestep-v15-turbo-shift3\\"); print(\\"MODELS DONE\\")" && python3 -c "import urllib.request; urllib.request.urlretrieve(\\"${REPLIT_SERVER_URL}/raw/http_server.py\\",\\"/app/http_server.py\\"); print(\\"SERVER DOWNLOADED\\")" && cd /app && ACESTEP_CHECKPOINT_DIR=/workspace/checkpoints python3 -u http_server.py'`;
 
   const query = `
     mutation createPod($input: PodFindAndDeployOnDemandInput!) {
@@ -62,13 +66,13 @@ async function createPod() {
     gpuTypeId: gpuId,
     gpuCount: 1,
     volumeInGb: 0,
-    containerDiskInGb: 50,
+    containerDiskInGb: 100,
     minVcpuCount: 4,
     minMemoryInGb: 16,
     ports: "8888/http",
-    dockerArgs: "",
+    dockerArgs: startupScript,
     env: [
-      { key: "ACESTEP_CHECKPOINT_DIR", value: "/app/checkpoints" },
+      { key: "ACESTEP_CHECKPOINT_DIR", value: "/workspace/checkpoints" },
     ],
   };
 
@@ -83,6 +87,12 @@ async function createPod() {
   console.log(`Image: ${pod.imageName}`);
   console.log(`\nPod ID for env: ${pod.id}`);
   console.log(`\nMonitor at: https://www.runpod.io/console/pods/${pod.id}`);
+  console.log(`\nThe pod will automatically:`);
+  console.log(`1. Install dependencies (ffmpeg, ace-step, flask)`);
+  console.log(`2. Download all 4 models from HuggingFace`);
+  console.log(`3. Download server script from Replit`);
+  console.log(`4. Start HTTP server on port 8888`);
+  console.log(`\nThis process takes ~10-15 minutes. Check logs in RunPod console.`);
 }
 
 async function getPodStatus(podId?: string) {
