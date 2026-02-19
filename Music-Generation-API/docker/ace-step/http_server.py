@@ -22,12 +22,14 @@ VALID_MODELS = {
     "acestep-v15-turbo",
     "acestep-v15-sft",
     "acestep-v15-base",
+    "acestep-v15-turbo-shift3",
 }
 
 DEFAULT_STEPS = {
     "acestep-v15-turbo": 8,
     "acestep-v15-sft": 32,
     "acestep-v15-base": 50,
+    "acestep-v15-turbo-shift3": 8,
 }
 
 DEFAULT_MODEL = os.environ.get("ACESTEP_DIT_MODEL", "acestep-v15-turbo")

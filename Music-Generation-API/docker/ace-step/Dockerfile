@@ -41,7 +41,8 @@ RUN python -c "from huggingface_hub import snapshot_download; snapshot_download(
 
 RUN python -c "from huggingface_hub import snapshot_download; \
     snapshot_download('ACE-Step/acestep-v15-sft', local_dir='/app/checkpoints/acestep-v15-sft'); \
-    snapshot_download('ACE-Step/acestep-v15-base', local_dir='/app/checkpoints/acestep-v15-base')"
+    snapshot_download('ACE-Step/acestep-v15-base', local_dir='/app/checkpoints/acestep-v15-base'); \
+    snapshot_download('ACE-Step/acestep-v15-turbo-shift3', local_dir='/app/checkpoints/acestep-v15-turbo-shift3')"
 
 ENV ACESTEP_CHECKPOINT_DIR=/app/checkpoints
 
