@@ -210,6 +210,7 @@ if __name__ == "__main__":
     print(f"[ACE-Step] Pre-loading default model: {DEFAULT_MODEL}...")
     get_pipeline(DEFAULT_MODEL)
 
-    server = HTTPServer(("0.0.0.0", 8888), AceStepHandler)
-    print("[ACE-Step] Server ready on :8888")
+    port = int(os.environ.get("PORT", "8888"))
+    server = HTTPServer(("0.0.0.0", port), AceStepHandler)
+    print(f"[ACE-Step] Server ready on :{port}")
     server.serve_forever()
