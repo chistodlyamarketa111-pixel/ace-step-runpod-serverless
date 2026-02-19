@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ACE-Step v1.5 — HTTP Test Server for RunPod Pod (hourly)
-Simple Flask server for testing models interactively.
+Uses only Python stdlib (no Flask needed).
 """
 
 import base64
@@ -10,12 +10,9 @@ import json
 import os
 import time
 import traceback
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import torch
-import soundfile as sf
-from flask import Flask, request, jsonify, send_file
-
-app = Flask(__name__)
 
 CHECKPOINT_DIR = os.environ.get("ACESTEP_CHECKPOINT_DIR", "/workspace/checkpoints")
 DEFAULT_DIT_MODEL = os.environ.get("ACESTEP_DIT_MODEL", "acestep-v15-turbo")
@@ -104,149 +101,158 @@ def get_llm_handler():
     return llm_handler
 
 
-@app.route("/health", methods=["GET"])
-def health():
+def _json_response(handler, data, status=200):
+    body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def handle_health():
     available = [m for m in VALID_MODELS if os.path.exists(os.path.join(CHECKPOINT_DIR, m))]
-    return jsonify({
+    return {
         "status": "ok",
         "available_models": available,
         "loaded_models": list(dit_handlers.keys()),
         "llm_loaded": llm_handler is not None,
         "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "none",
         "vram_gb": round(torch.cuda.get_device_properties(0).total_mem / 1e9, 1) if torch.cuda.is_available() else 0,
-    })
+    }
 
 
-@app.route("/generate", methods=["POST"])
-def generate():
-    try:
-        data = request.json or {}
+def handle_generate(data):
+    from acestep.inference import GenerationParams, GenerationConfig, generate_music
 
-        from acestep.inference import GenerationParams, GenerationConfig, generate_music
+    model_name = data.get("model", DEFAULT_DIT_MODEL)
+    if model_name not in VALID_MODELS:
+        return {"error": f"Invalid model '{model_name}'. Available: {list(VALID_MODELS)}"}, 400
 
-        model_name = data.get("model", DEFAULT_DIT_MODEL)
-        if model_name not in VALID_MODELS:
-            return jsonify({"error": f"Invalid model '{model_name}'. Available: {list(VALID_MODELS)}"}), 400
+    current_dit = get_dit_handler(model_name)
+    current_llm = get_llm_handler()
 
-        current_dit = get_dit_handler(model_name)
-        current_llm = get_llm_handler()
+    prompt = data.get("prompt", "")
+    lyrics = data.get("lyrics", "")
+    duration = float(data.get("duration", 30))
+    task_type = data.get("task_type", "text2music")
+    audio_format = data.get("audio_format", "mp3")
+    seed = int(data.get("seed", -1))
+    default_steps = DEFAULT_STEPS.get(model_name, 8)
+    inference_steps = int(data.get("inference_steps", default_steps))
+    guidance_scale = float(data.get("guidance_scale", 7.0))
+    thinking = data.get("thinking", True)
+    batch_size = int(data.get("batch_size", 1))
 
-        prompt = data.get("prompt", "")
-        lyrics = data.get("lyrics", "")
-        duration = float(data.get("duration", 30))
-        task_type = data.get("task_type", "text2music")
-        audio_format = data.get("audio_format", "mp3")
-        seed = int(data.get("seed", -1))
-        default_steps = DEFAULT_STEPS.get(model_name, 8)
-        inference_steps = int(data.get("inference_steps", default_steps))
-        guidance_scale = float(data.get("guidance_scale", 7.0))
-        thinking = data.get("thinking", True)
-        batch_size = int(data.get("batch_size", 1))
+    bpm = data.get("bpm", None)
+    if bpm is not None:
+        bpm = int(bpm)
+    key_scale = data.get("key_scale", "")
+    time_signature = data.get("time_signature", "")
+    vocal_language = data.get("vocal_language", "unknown")
+    instrumental = data.get("instrumental", False)
 
-        bpm = data.get("bpm", None)
-        if bpm is not None:
-            bpm = int(bpm)
-        key_scale = data.get("key_scale", "")
-        time_signature = data.get("time_signature", "")
-        vocal_language = data.get("vocal_language", "unknown")
-        instrumental = data.get("instrumental", False)
+    print(f"[ACE-Step] Generate: model={model_name}, prompt='{prompt[:80]}', "
+          f"duration={duration}s, steps={inference_steps}")
 
-        print(f"[ACE-Step] Generate: model={model_name}, prompt='{prompt[:80]}', "
-              f"duration={duration}s, steps={inference_steps}")
+    params = GenerationParams(
+        caption=prompt,
+        lyrics=lyrics,
+        duration=duration,
+        task_type=task_type,
+        seed=seed,
+        inference_steps=inference_steps,
+        guidance_scale=guidance_scale,
+        thinking=thinking if current_llm is not None else False,
+        bpm=bpm,
+        keyscale=key_scale,
+        timesignature=time_signature,
+        vocal_language=vocal_language,
+        instrumental=instrumental,
+    )
 
-        params = GenerationParams(
-            caption=prompt,
-            lyrics=lyrics,
-            duration=duration,
-            task_type=task_type,
-            seed=seed,
-            inference_steps=inference_steps,
-            guidance_scale=guidance_scale,
-            thinking=thinking if current_llm is not None else False,
-            bpm=bpm,
-            keyscale=key_scale,
-            timesignature=time_signature,
-            vocal_language=vocal_language,
-            instrumental=instrumental,
-        )
+    config = GenerationConfig(
+        batch_size=batch_size,
+        use_random_seed=(seed < 0),
+        seeds=[seed] if seed >= 0 else None,
+        audio_format=audio_format if audio_format in ("mp3", "wav", "flac") else "mp3",
+    )
 
-        config = GenerationConfig(
-            batch_size=batch_size,
-            use_random_seed=(seed < 0),
-            seeds=[seed] if seed >= 0 else None,
-            audio_format=audio_format if audio_format in ("mp3", "wav", "flac") else "mp3",
-        )
+    start = time.time()
+    result = generate_music(
+        dit_handler=current_dit,
+        llm_handler=current_llm,
+        params=params,
+        config=config,
+    )
+    gen_time = time.time() - start
 
-        start = time.time()
-        result = generate_music(
-            dit_handler=current_dit,
-            llm_handler=current_llm,
-            params=params,
-            config=config,
-        )
-        gen_time = time.time() - start
+    if not result.success:
+        return {"error": result.error or "Generation failed"}, 500
 
-        if not result.success:
-            return jsonify({"error": result.error or "Generation failed"}), 500
+    print(f"[ACE-Step] Done in {gen_time:.1f}s, {len(result.audios)} audio(s)")
 
-        print(f"[ACE-Step] Done in {gen_time:.1f}s, {len(result.audios)} audio(s)")
+    audios_output = []
+    for i, audio_info in enumerate(result.audios):
+        audio_path = audio_info.get("path", audio_info.get("audio_path", ""))
+        if audio_path and os.path.exists(audio_path):
+            with open(audio_path, "rb") as f:
+                audio_bytes = f.read()
+        elif "audio" in audio_info and audio_info["audio"] is not None:
+            import torchaudio
+            tensor = audio_info["audio"]
+            sr = audio_info.get("sample_rate", 44100)
+            buf = io.BytesIO()
+            torchaudio.save(buf, tensor.cpu(), sr, format=audio_format)
+            audio_bytes = buf.getvalue()
+        else:
+            continue
 
-        audios_output = []
-        for i, audio_info in enumerate(result.audios):
-            audio_path = audio_info.get("path", audio_info.get("audio_path", ""))
-            if audio_path and os.path.exists(audio_path):
-                with open(audio_path, "rb") as f:
-                    audio_bytes = f.read()
-            elif "audio" in audio_info and audio_info["audio"] is not None:
-                import torchaudio
-                tensor = audio_info["audio"]
-                sr = audio_info.get("sample_rate", 44100)
-                buf = io.BytesIO()
-                torchaudio.save(buf, tensor.cpu(), sr, format=audio_format)
-                audio_bytes = buf.getvalue()
-            else:
-                continue
-
-            audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-            audios_output.append({
-                "audio_base64": audio_b64,
-                "filename": f"ace_step_{model_name}_{i}.{audio_format}",
-                "index": i,
-            })
-
-        if not audios_output:
-            return jsonify({"error": "No audio files generated"}), 500
-
-        return jsonify({
-            "model": model_name,
-            "audio_base64": audios_output[0]["audio_base64"],
-            "audio_format": audio_format,
-            "filename": audios_output[0]["filename"],
-            "generation_time": round(gen_time, 1),
-            "duration": duration,
-            "inference_steps": inference_steps,
-            "seed": seed,
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        audios_output.append({
+            "audio_base64": audio_b64,
+            "filename": f"ace_step_{model_name}_{i}.{audio_format}",
+            "index": i,
         })
 
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+    if not audios_output:
+        return {"error": "No audio files generated"}, 500
+
+    return {
+        "model": model_name,
+        "audio_base64": audios_output[0]["audio_base64"],
+        "audio_format": audio_format,
+        "filename": audios_output[0]["filename"],
+        "generation_time": round(gen_time, 1),
+        "duration": duration,
+        "inference_steps": inference_steps,
+        "seed": seed,
+    }, 200
 
 
-@app.route("/download", methods=["POST"])
-def download():
-    resp = generate()
-    if isinstance(resp, tuple):
-        return resp
-    data = resp.get_json()
-    if "error" in data:
-        return resp
+class AceStepHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/health":
+            _json_response(self, handle_health())
+        else:
+            _json_response(self, {"error": "Not found"}, 404)
 
-    audio_bytes = base64.b64decode(data["audio_base64"])
-    buf = io.BytesIO(audio_bytes)
-    buf.seek(0)
-    return send_file(buf, mimetype="audio/mpeg", as_attachment=True,
-                     download_name=data["filename"])
+    def do_POST(self):
+        if self.path == "/generate":
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length) if content_length > 0 else b"{}"
+                data = json.loads(body)
+                result, status = handle_generate(data)
+                _json_response(self, result, status)
+            except Exception as e:
+                traceback.print_exc()
+                _json_response(self, {"error": str(e)}, 500)
+        else:
+            _json_response(self, {"error": "Not found"}, 404)
+
+    def log_message(self, format, *args):
+        print(f"[HTTP] {args[0]}")
 
 
 if __name__ == "__main__":
@@ -258,5 +264,6 @@ if __name__ == "__main__":
     get_dit_handler(DEFAULT_DIT_MODEL)
     get_llm_handler()
 
-    print("[ACE-Step] Starting HTTP server on port 8888...")
-    app.run(host="0.0.0.0", port=8888, threaded=False)
+    server = HTTPServer(("0.0.0.0", 8888), AceStepHandler)
+    print("[ACE-Step] Server starting on :8888")
+    server.serve_forever()
