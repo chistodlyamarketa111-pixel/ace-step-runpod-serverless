@@ -91,7 +91,6 @@ const MODELS = [
   { id: "acestep-v15-turbo", label: "ACE-Step v1.5 Turbo", steps: 8, description: "Fast generation, 8 steps" },
   { id: "acestep-v15-sft", label: "ACE-Step v1.5 SFT", steps: 32, description: "High quality, 32 steps" },
   { id: "acestep-v15-base", label: "ACE-Step v1.5 Base", steps: 50, description: "Maximum quality, 50 steps" },
-  { id: "acestep-v15-turbo-shift3", label: "ACE-Step v1.5 Turbo Shift3", steps: 8, description: "Fast with shift=3, 8 steps" },
 ] as const;
 
 const playgroundSchema = z.object({

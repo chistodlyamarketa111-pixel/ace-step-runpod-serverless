@@ -41,14 +41,14 @@ RUN python -c "from huggingface_hub import snapshot_download; snapshot_download(
 
 RUN python -c "from huggingface_hub import snapshot_download; \
     snapshot_download('ACE-Step/acestep-v15-sft', local_dir='/app/checkpoints/acestep-v15-sft'); \
-    snapshot_download('ACE-Step/acestep-v15-base', local_dir='/app/checkpoints/acestep-v15-base'); \
-    snapshot_download('ACE-Step/acestep-v15-turbo-shift3', local_dir='/app/checkpoints/acestep-v15-turbo-shift3')"
+    snapshot_download('ACE-Step/acestep-v15-base', local_dir='/app/checkpoints/acestep-v15-base')"
 
 ENV ACESTEP_CHECKPOINT_DIR=/app/checkpoints
 
 WORKDIR /app
 
 COPY handler.py /app/handler.py
+COPY http_server.py /app/http_server.py
 COPY test_input.json /app/test_input.json
 
 CMD ["python", "-u", "/app/handler.py"]

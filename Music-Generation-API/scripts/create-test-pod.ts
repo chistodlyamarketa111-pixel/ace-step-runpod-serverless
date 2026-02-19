@@ -34,7 +34,7 @@ async function createPod() {
   console.log(`Creating pod with GPU: ${gpuId}`);
   console.log(`Docker image: ${imageName}`);
 
-  const startupScript = `bash -c 'apt-get update && apt-get install -y ffmpeg libsndfile1 && pip install flask huggingface_hub soundfile && pip install git+https://github.com/ACE-Step/ACE-Step.git && python3 -c "from huggingface_hub import snapshot_download as dl; import os; d=\\"/workspace/checkpoints\\"; os.makedirs(d,exist_ok=True); dl(\\"ACE-Step/Ace-Step1.5\\",local_dir=d); dl(\\"ACE-Step/acestep-v15-sft\\",local_dir=d+\\"/acestep-v15-sft\\"); dl(\\"ACE-Step/acestep-v15-base\\",local_dir=d+\\"/acestep-v15-base\\"); dl(\\"ACE-Step/acestep-v15-turbo-shift3\\",local_dir=d+\\"/acestep-v15-turbo-shift3\\"); print(\\"MODELS DONE\\")" && python3 -c "import urllib.request; urllib.request.urlretrieve(\\"${REPLIT_SERVER_URL}/raw/http_server.py\\",\\"/app/http_server.py\\"); print(\\"SERVER DOWNLOADED\\")" && cd /app && ACESTEP_CHECKPOINT_DIR=/workspace/checkpoints python3 -u http_server.py'`;
+  const startupScript = `bash -c 'apt-get update && apt-get install -y ffmpeg libsndfile1 && pip install huggingface_hub soundfile && pip install git+https://github.com/ACE-Step/ACE-Step.git && python3 -c "from huggingface_hub import snapshot_download as dl; import os; d=\\"/workspace/checkpoints\\"; os.makedirs(d,exist_ok=True); dl(\\"ACE-Step/Ace-Step1.5\\",local_dir=d); dl(\\"ACE-Step/acestep-v15-sft\\",local_dir=d+\\"/acestep-v15-sft\\"); dl(\\"ACE-Step/acestep-v15-base\\",local_dir=d+\\"/acestep-v15-base\\"); print(\\"MODELS DONE\\")" && python3 -c "import urllib.request; urllib.request.urlretrieve(\\"${REPLIT_SERVER_URL}/raw/http_server.py\\",\\"/app/http_server.py\\"); print(\\"SERVER DOWNLOADED\\")" && cd /app && ACESTEP_CHECKPOINT_DIR=/workspace/checkpoints ACESTEP_CPU_OFFLOAD=true python3 -u http_server.py'`;
 
   const query = `
     mutation createPod($input: PodFindAndDeployOnDemandInput!) {
@@ -318,7 +318,7 @@ async function testAllModels() {
     process.exit(1);
   }
 
-  const models = ["acestep-v15-sft", "acestep-v15-base", "acestep-v15-turbo-shift3"];
+  const models = ["acestep-v15-sft", "acestep-v15-base"];
   console.log(`Testing ${models.length} models on pod ${podId}...`);
 
   for (const model of models) {
