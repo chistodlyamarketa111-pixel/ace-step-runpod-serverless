@@ -12,6 +12,7 @@ import time
 import traceback
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
+import gc
 import torch
 
 CHECKPOINT_DIR = os.environ.get("ACESTEP_CHECKPOINT_DIR", "/workspace/checkpoints")
@@ -120,6 +121,14 @@ def handle_generate(data):
 
     save_dir = f"/tmp/ace_output/{int(time.time()*1000)}"
     os.makedirs(save_dir, exist_ok=True)
+
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+        free_mem = torch.cuda.mem_get_info()[0] / 1e9
+        total_mem = torch.cuda.mem_get_info()[1] / 1e9
+        print(f"[ACE-Step] GPU memory: {free_mem:.1f}GB free / {total_mem:.1f}GB total")
 
     print(f"[ACE-Step] Generate: model={model_name}, prompt='{prompt[:80]}', "
           f"duration={duration}s, steps={infer_step}, guidance={guidance_scale}, "
