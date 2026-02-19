@@ -125,14 +125,9 @@ def handle_generate(data):
           f"duration={duration}s, steps={infer_step}, guidance={guidance_scale}, "
           f"save_path={save_dir}")
 
-    gen_fn = getattr(pipe, "calc_v", None) or getattr(pipe, "calc", None)
-    if gen_fn is None:
-        methods = [m for m in dir(pipe) if not m.startswith("_") and callable(getattr(pipe, m, None))]
-        return {"error": f"No calc/calc_v method. Available: {methods}"}, 500
-
     start = time.time()
     try:
-        result = gen_fn(
+        result = pipe(
             prompt=prompt,
             lyrics=lyrics,
             audio_duration=duration,
@@ -145,18 +140,24 @@ def handle_generate(data):
             save_path=save_dir,
         )
     except TypeError as e:
-        print(f"[ACE-Step] calc_v TypeError: {e}")
-        result = gen_fn(
-            prompt=prompt,
-            lyrics=lyrics,
-            audio_duration=duration,
-            infer_step=infer_step,
-            guidance_scale=guidance_scale,
-            task=task,
-            manual_seeds=manual_seeds,
-            batch_size=batch_size,
-            save_path=save_dir,
-        )
+        print(f"[ACE-Step] __call__ TypeError: {e}, trying with fewer params...")
+        try:
+            result = pipe(
+                prompt=prompt,
+                lyrics=lyrics,
+                audio_duration=duration,
+                infer_step=infer_step,
+                guidance_scale=guidance_scale,
+                task=task,
+                manual_seeds=manual_seeds,
+                batch_size=batch_size,
+                save_path=save_dir,
+            )
+        except TypeError as e2:
+            print(f"[ACE-Step] __call__ TypeError again: {e2}")
+            import inspect
+            sig = inspect.signature(pipe.__call__)
+            return {"error": f"TypeError: {e2}", "call_signature": str(sig)}, 500
     gen_time = time.time() - start
 
     print(f"[ACE-Step] Done in {gen_time:.1f}s")
