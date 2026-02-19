@@ -5,6 +5,7 @@ Uses ACEStepPipeline from ace-step package + Python stdlib http.server.
 """
 
 import base64
+import glob
 import json
 import os
 import time
@@ -58,12 +59,13 @@ def get_pipeline(model_name: str):
         elapsed = time.time() - start
         print(f"[ACE-Step] Pipeline created in {elapsed:.1f}s")
 
-    print(f"[ACE-Step] Loading checkpoint: {model_name} from {model_path}")
-    start = time.time()
-    pipeline.load_checkpoint(checkpoint_dir=model_path)
-    elapsed = time.time() - start
-    print(f"[ACE-Step] Checkpoint '{model_name}' loaded in {elapsed:.1f}s, loaded={pipeline.loaded}")
-    current_model = model_name
+    if current_model != model_name:
+        print(f"[ACE-Step] Loading checkpoint: {model_name} from {model_path}")
+        start = time.time()
+        pipeline.load_checkpoint(checkpoint_dir=model_path)
+        elapsed = time.time() - start
+        print(f"[ACE-Step] Checkpoint '{model_name}' loaded in {elapsed:.1f}s, loaded={pipeline.loaded}")
+        current_model = model_name
 
     return pipeline
 
@@ -103,6 +105,8 @@ def handle_generate(data):
     lyrics = data.get("lyrics", "")
     duration = float(data.get("duration", 30))
     audio_format = data.get("audio_format", "wav")
+    if audio_format not in ("wav", "mp3", "flac"):
+        audio_format = "wav"
     seed = int(data.get("seed", -1))
     default_steps = DEFAULT_STEPS.get(model_name, 8)
     infer_step = int(data.get("inference_steps", default_steps))
@@ -114,88 +118,101 @@ def handle_generate(data):
     if seed >= 0:
         manual_seeds = [seed] * batch_size
 
-    save_dir = "/tmp/ace_output"
+    save_dir = f"/tmp/ace_output/{int(time.time()*1000)}"
     os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, f"gen_{int(time.time())}")
 
     print(f"[ACE-Step] Generate: model={model_name}, prompt='{prompt[:80]}', "
-          f"duration={duration}s, steps={infer_step}, guidance={guidance_scale}")
+          f"duration={duration}s, steps={infer_step}, guidance={guidance_scale}, "
+          f"save_path={save_dir}")
 
-    gen_method = getattr(pipe, "calc_v", None) or getattr(pipe, "calc", None)
-    if gen_method is None:
-        return {"error": "Pipeline has no calc/calc_v method"}, 500
+    gen_fn = getattr(pipe, "calc_v", None) or getattr(pipe, "calc", None)
+    if gen_fn is None:
+        methods = [m for m in dir(pipe) if not m.startswith("_") and callable(getattr(pipe, m, None))]
+        return {"error": f"No calc/calc_v method. Available: {methods}"}, 500
 
     start = time.time()
-    result = gen_method(
-        prompt=prompt,
-        lyrics=lyrics,
-        audio_duration=duration,
-        infer_step=infer_step,
-        guidance_scale=guidance_scale,
-        task=task,
-        format=audio_format if audio_format in ("wav", "mp3", "flac") else "wav",
-        manual_seeds=manual_seeds,
-        batch_size=batch_size,
-        save_path=save_path,
-    )
+    try:
+        result = gen_fn(
+            prompt=prompt,
+            lyrics=lyrics,
+            audio_duration=duration,
+            infer_step=infer_step,
+            guidance_scale=guidance_scale,
+            task=task,
+            format=audio_format,
+            manual_seeds=manual_seeds,
+            batch_size=batch_size,
+            save_path=save_dir,
+        )
+    except TypeError as e:
+        print(f"[ACE-Step] calc_v TypeError: {e}")
+        result = gen_fn(
+            prompt=prompt,
+            lyrics=lyrics,
+            audio_duration=duration,
+            infer_step=infer_step,
+            guidance_scale=guidance_scale,
+            task=task,
+            manual_seeds=manual_seeds,
+            batch_size=batch_size,
+            save_path=save_dir,
+        )
     gen_time = time.time() - start
 
-    print(f"[ACE-Step] Done in {gen_time:.1f}s, result type: {type(result).__name__}")
+    print(f"[ACE-Step] Done in {gen_time:.1f}s")
 
     audio_b64 = None
+    found_path = None
 
-    if isinstance(result, dict):
-        print(f"[ACE-Step] Result keys: {list(result.keys())}")
-        for key in ("audio", "audio_path", "path", "file"):
-            if key in result:
-                val = result[key]
-                if isinstance(val, bytes):
-                    audio_b64 = base64.b64encode(val).decode("utf-8")
-                    break
-                elif isinstance(val, str) and os.path.exists(val):
-                    with open(val, "rb") as f:
-                        audio_b64 = base64.b64encode(f.read()).decode("utf-8")
-                    break
+    audio_files = glob.glob(os.path.join(save_dir, f"*.{audio_format}"))
+    if not audio_files:
+        audio_files = glob.glob(os.path.join(save_dir, "*.wav")) + \
+                      glob.glob(os.path.join(save_dir, "*.mp3")) + \
+                      glob.glob(os.path.join(save_dir, "*.flac"))
+    if not audio_files:
+        audio_files = glob.glob(os.path.join(save_dir, "**/*"), recursive=True)
+        audio_files = [f for f in audio_files if os.path.isfile(f) and os.path.getsize(f) > 1000]
 
-    elif isinstance(result, (list, tuple)):
-        print(f"[ACE-Step] Result is list with {len(result)} items")
-        for item in result:
+    if audio_files:
+        found_path = audio_files[0]
+        with open(found_path, "rb") as f:
+            audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+        ext = found_path.rsplit(".", 1)[-1] if "." in found_path else audio_format
+        if ext in ("wav", "mp3", "flac"):
+            audio_format = ext
+        print(f"[ACE-Step] Found audio file: {found_path} ({os.path.getsize(found_path)} bytes)")
+
+    if audio_b64 is None and result is not None:
+        if isinstance(result, (list, tuple)) and len(result) > 0:
+            item = result[0]
             if isinstance(item, str) and os.path.exists(item):
                 with open(item, "rb") as f:
                     audio_b64 = base64.b64encode(f.read()).decode("utf-8")
-                break
-            elif isinstance(item, dict):
-                for key in ("audio_path", "path", "file", "audio"):
-                    if key in item:
-                        val = item[key]
-                        if isinstance(val, str) and os.path.exists(val):
-                            with open(val, "rb") as f:
-                                audio_b64 = base64.b64encode(f.read()).decode("utf-8")
-                            break
-                if audio_b64:
-                    break
-
-    elif isinstance(result, str):
-        if os.path.exists(result):
-            with open(result, "rb") as f:
-                audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+                found_path = item
+            elif isinstance(item, (list, tuple)) and len(item) > 0:
+                sub = item[0]
+                if isinstance(sub, str) and os.path.exists(sub):
+                    with open(sub, "rb") as f:
+                        audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+                    found_path = sub
 
     if audio_b64 is None:
-        saved = [f for f in os.listdir(save_dir) if f.startswith(f"gen_")]
-        print(f"[ACE-Step] Checking save_dir: {saved}")
-        for fname in sorted(saved, reverse=True):
-            fpath = os.path.join(save_dir, fname)
-            if os.path.isfile(fpath) and os.path.getsize(fpath) > 0:
-                with open(fpath, "rb") as f:
-                    audio_b64 = base64.b64encode(f.read()).decode("utf-8")
-                audio_format = fname.rsplit(".", 1)[-1] if "." in fname else audio_format
-                break
-
-    if audio_b64 is None:
+        all_files = []
+        for root, dirs, files in os.walk(save_dir):
+            for fname in files:
+                fp = os.path.join(root, fname)
+                all_files.append(f"{fp} ({os.path.getsize(fp)}b)")
         result_info = f"type={type(result).__name__}"
-        if isinstance(result, dict):
-            result_info += f" keys={list(result.keys())}"
-        return {"error": f"No audio produced. {result_info}"}, 500
+        if isinstance(result, (list, tuple)):
+            result_info += f" len={len(result)}"
+            if result:
+                result_info += f" first_type={type(result[0]).__name__}"
+                if isinstance(result[0], (list, tuple)) and result[0]:
+                    result_info += f" inner={type(result[0][0]).__name__}"
+        return {
+            "error": f"No audio produced. {result_info}",
+            "save_dir_contents": all_files,
+        }, 500
 
     return {
         "model": model_name,
