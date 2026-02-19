@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ACE-Step v1.5 — HTTP Test Server for RunPod Pod (hourly)
-Uses only Python stdlib (no Flask needed).
+Uses ACEStepPipeline from ace-step package + Python stdlib http.server.
 """
 
 import base64
@@ -15,8 +15,6 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import torch
 
 CHECKPOINT_DIR = os.environ.get("ACESTEP_CHECKPOINT_DIR", "/workspace/checkpoints")
-DEFAULT_DIT_MODEL = os.environ.get("ACESTEP_DIT_MODEL", "acestep-v15-turbo")
-LM_MODEL = os.environ.get("ACESTEP_LM_MODEL", "acestep-5Hz-lm-1.7B")
 CPU_OFFLOAD = os.environ.get("ACESTEP_CPU_OFFLOAD", "false").lower() == "true"
 
 VALID_MODELS = {
@@ -33,72 +31,33 @@ DEFAULT_STEPS = {
     "acestep-v15-turbo-shift3": 8,
 }
 
-dit_handlers = {}
-llm_handler = None
-_gpu_initialized = False
+DEFAULT_MODEL = os.environ.get("ACESTEP_DIT_MODEL", "acestep-v15-turbo")
+
+pipelines = {}
 
 
-def _init_gpu():
-    global _gpu_initialized
-    if _gpu_initialized:
-        return
-    from acestep.gpu_config import get_gpu_config, set_global_gpu_config
-    gpu_config = get_gpu_config()
-    set_global_gpu_config(gpu_config)
-    print(f"[ACE-Step] GPU config: {gpu_config}")
-    _gpu_initialized = True
+def get_pipeline(model_name: str):
+    global pipelines
+    if model_name in pipelines:
+        return pipelines[model_name]
 
+    from acestep.pipeline_ace_step import ACEStepPipeline
 
-def get_dit_handler(model_name: str):
-    global dit_handlers
-    if model_name in dit_handlers:
-        return dit_handlers[model_name]
+    model_path = os.path.join(CHECKPOINT_DIR, model_name)
+    if not os.path.exists(model_path):
+        raise ValueError(f"Model '{model_name}' not found at {model_path}")
 
-    _init_gpu()
-
-    from acestep.handler import AceStepHandler
-
-    dit_path = os.path.join(CHECKPOINT_DIR, model_name)
-    if not os.path.exists(dit_path):
-        raise ValueError(f"Model '{model_name}' not found at {dit_path}")
-
-    print(f"[ACE-Step] Loading DiT model: {model_name} from {dit_path}")
+    print(f"[ACE-Step] Loading pipeline for: {model_name} from {model_path}")
     start = time.time()
-    handler = AceStepHandler(
-        checkpoint_dir=CHECKPOINT_DIR,
-        dit_model_path=dit_path,
+    pipe = ACEStepPipeline(
+        checkpoint_dir=model_path,
         cpu_offload=CPU_OFFLOAD,
     )
     elapsed = time.time() - start
-    print(f"[ACE-Step] DiT model '{model_name}' loaded in {elapsed:.1f}s")
+    print(f"[ACE-Step] Pipeline '{model_name}' loaded in {elapsed:.1f}s")
 
-    dit_handlers[model_name] = handler
-    return handler
-
-
-def get_llm_handler():
-    global llm_handler
-    if llm_handler is not None:
-        return llm_handler
-
-    _init_gpu()
-
-    lm_path = os.path.join(CHECKPOINT_DIR, LM_MODEL)
-    if os.path.exists(lm_path):
-        from acestep.llm_inference import LLMHandler
-        print(f"[ACE-Step] Loading LLM: {LM_MODEL}")
-        start = time.time()
-        llm_handler = LLMHandler(
-            model_path=lm_path,
-            checkpoint_dir=CHECKPOINT_DIR,
-        )
-        elapsed = time.time() - start
-        print(f"[ACE-Step] LLM loaded in {elapsed:.1f}s")
-    else:
-        llm_handler = None
-        print(f"[ACE-Step] LM model not found at {lm_path}, CoT disabled")
-
-    return llm_handler
+    pipelines[model_name] = pipe
+    return pipe
 
 
 def _json_response(handler, data, status=200):
@@ -115,117 +74,105 @@ def handle_health():
     return {
         "status": "ok",
         "available_models": available,
-        "loaded_models": list(dit_handlers.keys()),
-        "llm_loaded": llm_handler is not None,
+        "loaded_models": list(pipelines.keys()),
         "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "none",
         "vram_gb": round(torch.cuda.get_device_properties(0).total_mem / 1e9, 1) if torch.cuda.is_available() else 0,
     }
 
 
 def handle_generate(data):
-    from acestep.inference import GenerationParams, GenerationConfig, generate_music
-
-    model_name = data.get("model", DEFAULT_DIT_MODEL)
+    model_name = data.get("model", DEFAULT_MODEL)
     if model_name not in VALID_MODELS:
         return {"error": f"Invalid model '{model_name}'. Available: {list(VALID_MODELS)}"}, 400
 
-    current_dit = get_dit_handler(model_name)
-    current_llm = get_llm_handler()
+    pipe = get_pipeline(model_name)
 
     prompt = data.get("prompt", "")
     lyrics = data.get("lyrics", "")
     duration = float(data.get("duration", 30))
-    task_type = data.get("task_type", "text2music")
-    audio_format = data.get("audio_format", "mp3")
+    audio_format = data.get("audio_format", "wav")
     seed = int(data.get("seed", -1))
     default_steps = DEFAULT_STEPS.get(model_name, 8)
-    inference_steps = int(data.get("inference_steps", default_steps))
-    guidance_scale = float(data.get("guidance_scale", 7.0))
-    thinking = data.get("thinking", True)
+    infer_step = int(data.get("inference_steps", default_steps))
+    guidance_scale = float(data.get("guidance_scale", 15.0))
+    task = data.get("task_type", "text2music")
     batch_size = int(data.get("batch_size", 1))
 
-    bpm = data.get("bpm", None)
-    if bpm is not None:
-        bpm = int(bpm)
-    key_scale = data.get("key_scale", "")
-    time_signature = data.get("time_signature", "")
-    vocal_language = data.get("vocal_language", "unknown")
-    instrumental = data.get("instrumental", False)
+    manual_seeds = None
+    if seed >= 0:
+        manual_seeds = [seed] * batch_size
 
     print(f"[ACE-Step] Generate: model={model_name}, prompt='{prompt[:80]}', "
-          f"duration={duration}s, steps={inference_steps}")
-
-    params = GenerationParams(
-        caption=prompt,
-        lyrics=lyrics,
-        duration=duration,
-        task_type=task_type,
-        seed=seed,
-        inference_steps=inference_steps,
-        guidance_scale=guidance_scale,
-        thinking=thinking if current_llm is not None else False,
-        bpm=bpm,
-        keyscale=key_scale,
-        timesignature=time_signature,
-        vocal_language=vocal_language,
-        instrumental=instrumental,
-    )
-
-    config = GenerationConfig(
-        batch_size=batch_size,
-        use_random_seed=(seed < 0),
-        seeds=[seed] if seed >= 0 else None,
-        audio_format=audio_format if audio_format in ("mp3", "wav", "flac") else "mp3",
-    )
+          f"duration={duration}s, steps={infer_step}, guidance={guidance_scale}")
 
     start = time.time()
-    result = generate_music(
-        dit_handler=current_dit,
-        llm_handler=current_llm,
-        params=params,
-        config=config,
+    result = pipe.calc(
+        prompt=prompt,
+        lyrics=lyrics,
+        audio_duration=duration,
+        infer_step=infer_step,
+        guidance_scale=guidance_scale,
+        task=task,
+        format=audio_format if audio_format in ("wav", "mp3", "flac") else "wav",
+        manual_seeds=manual_seeds,
+        batch_size=batch_size,
+        save_path=None,
     )
     gen_time = time.time() - start
 
-    if not result.success:
-        return {"error": result.error or "Generation failed"}, 500
+    print(f"[ACE-Step] Done in {gen_time:.1f}s, result type: {type(result)}")
 
-    print(f"[ACE-Step] Done in {gen_time:.1f}s, {len(result.audios)} audio(s)")
+    audio_b64 = None
+    if isinstance(result, dict):
+        if "audio" in result:
+            audio_data = result["audio"]
+            if isinstance(audio_data, bytes):
+                audio_b64 = base64.b64encode(audio_data).decode("utf-8")
+            elif isinstance(audio_data, str):
+                if os.path.exists(audio_data):
+                    with open(audio_data, "rb") as f:
+                        audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+                else:
+                    audio_b64 = audio_data
+        elif "audio_path" in result or "path" in result:
+            path = result.get("audio_path", result.get("path", ""))
+            if path and os.path.exists(path):
+                with open(path, "rb") as f:
+                    audio_b64 = base64.b64encode(f.read()).decode("utf-8")
 
-    audios_output = []
-    for i, audio_info in enumerate(result.audios):
-        audio_path = audio_info.get("path", audio_info.get("audio_path", ""))
-        if audio_path and os.path.exists(audio_path):
-            with open(audio_path, "rb") as f:
-                audio_bytes = f.read()
-        elif "audio" in audio_info and audio_info["audio"] is not None:
-            import torchaudio
-            tensor = audio_info["audio"]
-            sr = audio_info.get("sample_rate", 44100)
-            buf = io.BytesIO()
-            torchaudio.save(buf, tensor.cpu(), sr, format=audio_format)
-            audio_bytes = buf.getvalue()
-        else:
-            continue
+    elif isinstance(result, (list, tuple)):
+        if len(result) > 0:
+            item = result[0]
+            if isinstance(item, str) and os.path.exists(item):
+                with open(item, "rb") as f:
+                    audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+            elif isinstance(item, dict):
+                path = item.get("audio_path", item.get("path", ""))
+                if path and os.path.exists(path):
+                    with open(path, "rb") as f:
+                        audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+            elif isinstance(item, bytes):
+                audio_b64 = base64.b64encode(item).decode("utf-8")
 
-        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-        audios_output.append({
-            "audio_base64": audio_b64,
-            "filename": f"ace_step_{model_name}_{i}.{audio_format}",
-            "index": i,
-        })
+    elif isinstance(result, str) and os.path.exists(result):
+        with open(result, "rb") as f:
+            audio_b64 = base64.b64encode(f.read()).decode("utf-8")
 
-    if not audios_output:
-        return {"error": "No audio files generated"}, 500
+    if audio_b64 is None:
+        result_info = str(type(result))
+        if isinstance(result, dict):
+            result_info = str(list(result.keys()))
+        elif isinstance(result, (list, tuple)):
+            result_info = f"list[{len(result)}] first={type(result[0]) if result else 'empty'}"
+        return {"error": f"Could not extract audio from result. Type: {result_info}", "raw_keys": result_info}, 500
 
     return {
         "model": model_name,
-        "audio_base64": audios_output[0]["audio_base64"],
+        "audio_base64": audio_b64,
         "audio_format": audio_format,
-        "filename": audios_output[0]["filename"],
         "generation_time": round(gen_time, 1),
         "duration": duration,
-        "inference_steps": inference_steps,
+        "inference_steps": infer_step,
         "seed": seed,
     }, 200
 
@@ -260,10 +207,9 @@ if __name__ == "__main__":
     available = [m for m in VALID_MODELS if os.path.exists(os.path.join(CHECKPOINT_DIR, m))]
     print(f"[ACE-Step] Available models: {available}")
 
-    print("[ACE-Step] Pre-loading default model...")
-    get_dit_handler(DEFAULT_DIT_MODEL)
-    get_llm_handler()
+    print(f"[ACE-Step] Pre-loading default model: {DEFAULT_MODEL}...")
+    get_pipeline(DEFAULT_MODEL)
 
     server = HTTPServer(("0.0.0.0", 8888), AceStepHandler)
-    print("[ACE-Step] Server starting on :8888")
+    print("[ACE-Step] Server ready on :8888")
     server.serve_forever()
