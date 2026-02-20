@@ -5,7 +5,8 @@ if (!RUNPOD_API_KEY) {
 }
 
 const GRAPHQL_URL = "https://api.runpod.io/graphql";
-const DOCKER_IMAGE = "ruslanmusin/ace-step-serverless:latest";
+const DOCKER_IMAGE = "runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04";
+const REPLIT_RAW_URL = "https://30ae1522-eccc-49e0-b335-f4d16f2f3093-00-3ixp57dkvat9h.picard.replit.dev";
 
 async function gql(query: string, variables: Record<string, any> = {}) {
   const res = await fetch(GRAPHQL_URL, {
@@ -57,18 +58,52 @@ async function createPod() {
     }
   `;
 
+  const startupScript = `bash -c '
+set -e
+echo "=== Installing dependencies ==="
+apt-get update -qq && apt-get install -y -qq ffmpeg libsndfile1 > /dev/null 2>&1
+pip install -q huggingface_hub soundfile
+pip install -q git+https://github.com/ACE-Step/ACE-Step.git
+
+echo "=== Downloading models ==="
+mkdir -p /workspace/checkpoints
+python3 -c "
+from huggingface_hub import snapshot_download
+import os
+d = \\"/workspace/checkpoints\\"
+print(\\"Downloading turbo...\\")
+snapshot_download(\\"ACE-Step/Ace-Step1.5\\", local_dir=d)
+print(\\"Downloading sft...\\")
+snapshot_download(\\"ACE-Step/acestep-v15-sft\\", local_dir=os.path.join(d, \\"acestep-v15-sft\\"))
+print(\\"Downloading base...\\")
+snapshot_download(\\"ACE-Step/acestep-v15-base\\", local_dir=os.path.join(d, \\"acestep-v15-base\\"))
+print(\\"Downloading turbo-shift3...\\")
+snapshot_download(\\"ACE-Step/acestep-v15-turbo-shift3\\", local_dir=os.path.join(d, \\"acestep-v15-turbo-shift3\\"))
+print(\\"ALL MODELS DOWNLOADED\\")
+"
+
+echo "=== Downloading server script ==="
+mkdir -p /app
+python3 -c "import urllib.request; urllib.request.urlretrieve(\\"${REPLIT_RAW_URL}/raw/http_server.py\\", \\"/app/http_server.py\\"); print(\\"SERVER READY\\")"
+
+echo "=== Starting HTTP server on port 8888 ==="
+cd /app
+ACESTEP_CHECKPOINT_DIR=/workspace/checkpoints ACESTEP_CPU_OFFLOAD=true python3 -u http_server.py
+'`;
+
   const input = {
     name: "ace-step-test",
     imageName,
     gpuTypeId: gpuId,
     gpuCount: 1,
-    volumeInGb: 0,
-    containerDiskInGb: 50,
+    volumeInGb: 20,
+    containerDiskInGb: 30,
     minVcpuCount: 4,
     minMemoryInGb: 16,
     ports: "8888/http",
-    dockerArgs: "bash -c 'cd /app && ACESTEP_CPU_OFFLOAD=true python3 -u http_server.py'",
+    dockerArgs: startupScript,
     env: [
+      { key: "ACESTEP_CHECKPOINT_DIR", value: "/workspace/checkpoints" },
       { key: "ACESTEP_CPU_OFFLOAD", value: "true" },
     ],
   };
@@ -84,8 +119,13 @@ async function createPod() {
   console.log(`Image: ${pod.imageName}`);
   console.log(`\nPod ID: ${pod.id}`);
   console.log(`Monitor: https://www.runpod.io/console/pods/${pod.id}`);
-  console.log(`\nHTTP server will start on port 8888 in ~1-2 minutes.`);
-  console.log(`Test URL: https://${pod.id}-8888.proxy.runpod.net/health`);
+  console.log(`\nVolume: 20GB (models saved, persist across stop/resume)`);
+  console.log(`\nStartup steps (~10-15 min first time, ~2 min after resume):`);
+  console.log(`  1. Install ffmpeg, ace-step package`);
+  console.log(`  2. Download 4 models to /workspace (saved on volume)`);
+  console.log(`  3. Download http_server.py from Replit`);
+  console.log(`  4. Start HTTP server on port 8888`);
+  console.log(`\nTest URL: https://${pod.id}-8888.proxy.runpod.net/health`);
   console.log(`\nCommands:`);
   console.log(`  Stop:    cd Music-Generation-API && npx tsx scripts/create-test-pod.ts stop ${pod.id}`);
   console.log(`  Resume:  cd Music-Generation-API && npx tsx scripts/create-test-pod.ts resume ${pod.id}`);
