@@ -97,12 +97,15 @@ export async function registerRoutes(
   });
 
   app.get("/api/jobs", async (_req, res) => {
-    res.json(await storage.getAllJobs());
+    const allJobs = await storage.getAllJobs();
+    const sanitized = allJobs.map(({ audioData, ...rest }: any) => rest);
+    res.json(sanitized);
   });
 
   app.get("/api/jobs/:id", async (req, res) => {
-    const job = await storage.getJob(req.params.id);
-    if (!job) return res.status(404).json({ error: "Job not found" });
+    const jobRaw = await storage.getJob(req.params.id);
+    if (!jobRaw) return res.status(404).json({ error: "Job not found" });
+    const { audioData: _ad, ...job } = jobRaw as any;
 
     if (job.status === "IN_PROGRESS" && job.runpodJobId) {
       try {
@@ -110,12 +113,20 @@ export async function registerRoutes(
         if (musicEngine) {
           const taskStatus = await musicEngine.queryTaskStatus(job.runpodJobId);
           if (taskStatus.status === "COMPLETED" && taskStatus.audio_path) {
-            await storage.updateJob(job.id, {
+            const updateData: Record<string, any> = {
               status: "COMPLETED",
               outputUrl: taskStatus.audio_path,
               progress: 100,
               completedAt: new Date(),
-            });
+            };
+            try {
+              const audioResult = await musicEngine.fetchAudio(taskStatus.audio_path);
+              updateData.audioData = audioResult.buffer.toString("base64");
+              updateData.audioFormat = audioResult.contentType.includes("wav") ? "wav" : audioResult.contentType.includes("flac") ? "flac" : "mp3";
+            } catch (audioErr: any) {
+              log(`Could not persist audio for job ${job.id}: ${audioErr.message}`, "routes");
+            }
+            await storage.updateJob(job.id, updateData);
           } else if (taskStatus.status === "FAILED") {
             await storage.updateJob(job.id, {
               status: "FAILED",
@@ -123,7 +134,8 @@ export async function registerRoutes(
               completedAt: new Date(),
             });
           }
-          const updated = await storage.getJob(job.id);
+          const updatedRaw = await storage.getJob(job.id);
+          const { audioData: _ad2, ...updated } = (updatedRaw || {}) as any;
           return res.json(updated);
         }
       } catch (err: any) {
@@ -135,8 +147,20 @@ export async function registerRoutes(
   });
 
   app.get("/api/jobs/:id/audio", async (req, res) => {
-    const job = await storage.getJob(req.params.id);
-    if (!job || job.status !== "COMPLETED" || !job.outputUrl) {
+    const job = await storage.getJob(req.params.id) as any;
+    if (!job || job.status !== "COMPLETED") {
+      return res.status(404).json({ error: "Audio not available" });
+    }
+
+    if (job.audioData) {
+      const buffer = Buffer.from(job.audioData, "base64");
+      const fmt = job.audioFormat || "wav";
+      const contentType = fmt === "wav" ? "audio/wav" : fmt === "flac" ? "audio/flac" : "audio/mpeg";
+      res.setHeader("Content-Type", contentType);
+      return res.send(buffer);
+    }
+
+    if (!job.outputUrl) {
       return res.status(404).json({ error: "Audio not available" });
     }
 
@@ -145,10 +169,17 @@ export async function registerRoutes(
       return res.status(500).json({ error: `Engine ${job.engine} not found` });
     }
 
-    const result = await musicEngine.fetchAudio(job.outputUrl);
-
-    res.setHeader("Content-Type", result.contentType);
-    res.send(result.buffer);
+    try {
+      const result = await musicEngine.fetchAudio(job.outputUrl);
+      await storage.updateJob(job.id, {
+        audioData: result.buffer.toString("base64"),
+        audioFormat: result.contentType.includes("wav") ? "wav" : result.contentType.includes("flac") ? "flac" : "mp3",
+      } as any);
+      res.setHeader("Content-Type", result.contentType);
+      res.send(result.buffer);
+    } catch (err: any) {
+      return res.status(404).json({ error: `Audio fetch failed: ${err.message}` });
+    }
   });
 
   app.get("/api/pod/diagnostics", requireBearerAuth, async (_req, res) => {
