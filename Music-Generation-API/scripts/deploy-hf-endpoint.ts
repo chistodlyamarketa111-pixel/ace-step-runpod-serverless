@@ -89,25 +89,46 @@ async function uploadFile(repoId: string, filePath: string, content: string): Pr
   }
 }
 
-async function uploadFileLFS(repoId: string, remotePath: string, content: Buffer): Promise<void> {
-  console.log(`  Uploading ${remotePath} (${content.length} bytes)...`);
+async function uploadFiles(repoId: string, files: Array<{path: string, content: string}>): Promise<void> {
+  const url = `${HF_API}/models/${repoId}/commit/main`;
 
-  const url = `https://huggingface.co/api/models/${repoId}/upload/main/${remotePath}`;
+  const ndjson_parts: string[] = [];
+  ndjson_parts.push(JSON.stringify({
+    key: "header",
+    value: { summary: "Upload ACE-Step handler files" },
+  }));
+
+  for (const f of files) {
+    ndjson_parts.push(JSON.stringify({
+      key: "file",
+      value: {
+        content: f.content,
+        path: f.path,
+        encoding: "utf-8",
+      },
+    }));
+  }
+
+  const body = ndjson_parts.join("\n");
 
   const res = await hfFetch(url, {
-    method: "PUT",
-    headers: { "Content-Type": "application/octet-stream" },
-    body: content,
+    method: "POST",
+    headers: { "Content-Type": "application/x-ndjson" },
+    body: body,
   });
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Upload ${remotePath} failed: ${res.status} ${text}`);
+    throw new Error(`Upload failed: ${res.status} ${text.substring(0, 500)}`);
   }
 }
 
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function uploadRepoFiles(repoId: string): Promise<void> {
   console.log("\nUploading files to HF repo...");
@@ -116,9 +137,6 @@ async function uploadRepoFiles(repoId: string): Promise<void> {
 
   const handlerContent = fs.readFileSync(path.join(dockerDir, "handler.py"), "utf-8");
   const requirementsContent = fs.readFileSync(path.join(dockerDir, "requirements.txt"), "utf-8");
-
-  await uploadFileLFS(repoId, "handler.py", Buffer.from(handlerContent));
-  await uploadFileLFS(repoId, "requirements.txt", Buffer.from(requirementsContent));
 
   const readmeContent = `---
 library_name: custom
@@ -165,7 +183,12 @@ Response:
 }
 \`\`\`
 `;
-  await uploadFileLFS(repoId, "README.md", Buffer.from(readmeContent));
+  console.log("  Uploading handler.py, requirements.txt, README.md...");
+  await uploadFiles(repoId, [
+    { path: "handler.py", content: handlerContent },
+    { path: "requirements.txt", content: requirementsContent },
+    { path: "README.md", content: readmeContent },
+  ]);
 
   console.log("Files uploaded successfully!");
 }
@@ -176,7 +199,8 @@ async function createEndpoint(repoId: string): Promise<any> {
   console.log(`  GPU: nvidia-a10g (~$1/hr)`);
   console.log(`  Scale-to-zero: enabled`);
 
-  const res = await hfFetch("https://api.endpoints.huggingface.cloud/v2/endpoint", {
+  const username = await getUsername();
+  const res = await hfFetch(`https://api.endpoints.huggingface.cloud/v2/endpoint/${username}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -185,6 +209,9 @@ async function createEndpoint(repoId: string): Promise<any> {
         repository: repoId,
         task: "custom",
         framework: "custom",
+        image: {
+          huggingface: {},
+        },
       },
       provider: {
         vendor: "aws",
