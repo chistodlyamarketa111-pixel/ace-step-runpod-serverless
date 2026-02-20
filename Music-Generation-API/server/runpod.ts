@@ -51,61 +51,76 @@ let podJobCounter = 0;
 
 async function podGenerate(taskId: string, input: Record<string, any>): Promise<void> {
   try {
-    log(`[Pod] Starting generation ${taskId}: ${JSON.stringify(input)}`, "runpod");
+    log(`[Pod] Starting async generation ${taskId}: model=${input.model || "default"}`, "runpod");
 
-    const response = await fetch(`${RUNPOD_POD_URL}/generate`, {
+    const response = await fetch(`${RUNPOD_POD_URL}/generate-async`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
-      signal: AbortSignal.timeout(600000),
+      signal: AbortSignal.timeout(30000),
     });
 
     const text = await response.text();
-    log(`[Pod] Response for ${taskId}: status=${response.status}, body length=${text.length}`, "runpod");
-
-    if (!text || text.length === 0) {
-      podJobs.set(taskId, {
-        status: "FAILED",
-        error: `Empty response from pod (HTTP ${response.status})`,
-      });
-      log(`[Pod] Generation ${taskId} failed: empty response`, "runpod");
-      return;
-    }
-
     let data: any;
     try {
       data = JSON.parse(text);
     } catch {
-      podJobs.set(taskId, {
-        status: "FAILED",
-        error: `Invalid JSON from pod: ${text.substring(0, 200)}`,
-      });
-      log(`[Pod] Generation ${taskId} failed: invalid JSON: ${text.substring(0, 200)}`, "runpod");
+      podJobs.set(taskId, { status: "FAILED", error: `Invalid JSON from pod: ${text.substring(0, 200)}` });
       return;
     }
 
-    if (!response.ok || data.error) {
-      podJobs.set(taskId, {
-        status: "FAILED",
-        error: data.error || `HTTP ${response.status}`,
-      });
-      log(`[Pod] Generation ${taskId} failed: ${data.error || response.status}`, "runpod");
+    if (!data.id) {
+      podJobs.set(taskId, { status: "FAILED", error: data.error || "No job ID returned" });
       return;
     }
 
-    podJobs.set(taskId, {
-      status: "COMPLETED",
-      audio_base64: data.audio_base64,
-      audio_format: data.audio_format || "mp3",
-      generation_time: data.generation_time,
-      model: data.model,
-    });
-    log(`[Pod] Generation ${taskId} completed in ${data.generation_time}s`, "runpod");
+    const podJobId = data.id;
+    log(`[Pod] Async job submitted: ${podJobId} for task ${taskId}`, "runpod");
+
+    const maxWait = 600000;
+    const pollInterval = 3000;
+    const start = Date.now();
+
+    while (Date.now() - start < maxWait) {
+      await new Promise(r => setTimeout(r, pollInterval));
+
+      try {
+        const statusRes = await fetch(`${RUNPOD_POD_URL}/job/${podJobId}`, {
+          signal: AbortSignal.timeout(15000),
+        });
+        const statusText = await statusRes.text();
+        let statusData: any;
+        try {
+          statusData = JSON.parse(statusText);
+        } catch {
+          log(`[Pod] Poll ${podJobId}: non-JSON response, retrying...`, "runpod");
+          continue;
+        }
+
+        if (statusData.status === "COMPLETED") {
+          podJobs.set(taskId, {
+            status: "COMPLETED",
+            audio_base64: statusData.audio_base64,
+            audio_format: statusData.audio_format || "mp3",
+            generation_time: statusData.generation_time,
+            model: statusData.model,
+          });
+          log(`[Pod] Generation ${taskId} completed in ${statusData.generation_time}s`, "runpod");
+          return;
+        } else if (statusData.status === "FAILED") {
+          podJobs.set(taskId, { status: "FAILED", error: statusData.error || "Generation failed on pod" });
+          log(`[Pod] Generation ${taskId} failed: ${statusData.error}`, "runpod");
+          return;
+        }
+      } catch (e: any) {
+        log(`[Pod] Poll error for ${podJobId}: ${e.message}, retrying...`, "runpod");
+      }
+    }
+
+    podJobs.set(taskId, { status: "FAILED", error: "Generation timeout (10 min)" });
+    log(`[Pod] Generation ${taskId} timed out after 10 min`, "runpod");
   } catch (e: any) {
-    podJobs.set(taskId, {
-      status: "FAILED",
-      error: e.message,
-    });
+    podJobs.set(taskId, { status: "FAILED", error: e.message });
     log(`[Pod] Generation ${taskId} error: ${e.message}`, "runpod");
   }
 }

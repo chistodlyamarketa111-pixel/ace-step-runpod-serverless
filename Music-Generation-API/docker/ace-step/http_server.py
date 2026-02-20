@@ -10,10 +10,15 @@ import json
 import os
 import time
 import traceback
+import threading
+import uuid
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import gc
 import torch
+
+async_jobs: dict = {}
+generation_lock = threading.Lock()
 
 CHECKPOINT_DIR = os.environ.get("ACESTEP_CHECKPOINT_DIR", "/workspace/checkpoints")
 CPU_OFFLOAD = os.environ.get("ACESTEP_CPU_OFFLOAD", "false").lower() == "true"
@@ -271,10 +276,57 @@ def handle_upload_chunk(data):
     return {"status": "chunk_received", "index": index, "received": len(upload_chunks[filename]), "total": total}, 200
 
 
+def run_async_generation(job_id: str, data: dict):
+    with generation_lock:
+        try:
+            async_jobs[job_id]["status"] = "IN_PROGRESS"
+            result, status_code = handle_generate(data)
+            if status_code == 200:
+                async_jobs[job_id] = {
+                    "status": "COMPLETED",
+                    "result": result,
+                }
+            else:
+                async_jobs[job_id] = {
+                    "status": "FAILED",
+                    "error": result.get("error", "Unknown error"),
+                }
+        except Exception as e:
+            traceback.print_exc()
+            async_jobs[job_id] = {
+                "status": "FAILED",
+                "error": str(e),
+            }
+
+
 class AceStepHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             _json_response(self, handle_health())
+        elif self.path.startswith("/job/"):
+            job_id = self.path[5:]
+            if job_id in async_jobs:
+                job = async_jobs[job_id]
+                if job["status"] == "COMPLETED":
+                    result = job.get("result", {})
+                    _json_response(self, {
+                        "status": "COMPLETED",
+                        "id": job_id,
+                        **result,
+                    })
+                elif job["status"] == "FAILED":
+                    _json_response(self, {
+                        "status": "FAILED",
+                        "id": job_id,
+                        "error": job.get("error", "Unknown error"),
+                    })
+                else:
+                    _json_response(self, {
+                        "status": "IN_PROGRESS",
+                        "id": job_id,
+                    })
+            else:
+                _json_response(self, {"error": "Job not found"}, 404)
         else:
             _json_response(self, {"error": "Not found"}, 404)
 
@@ -289,11 +341,18 @@ class AceStepHandler(BaseHTTPRequestHandler):
 
         if self.path == "/generate":
             try:
-                result, status = handle_generate(data)
+                with generation_lock:
+                    result, status = handle_generate(data)
                 _json_response(self, result, status)
             except Exception as e:
                 traceback.print_exc()
                 _json_response(self, {"error": str(e)}, 500)
+        elif self.path == "/generate-async":
+            job_id = str(uuid.uuid4())[:8]
+            async_jobs[job_id] = {"status": "QUEUED"}
+            thread = threading.Thread(target=run_async_generation, args=(job_id, data), daemon=True)
+            thread.start()
+            _json_response(self, {"id": job_id, "status": "QUEUED"})
         elif self.path == "/upload-chunk":
             try:
                 result, status = handle_upload_chunk(data)
