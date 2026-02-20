@@ -40,3 +40,4 @@ externalPort = 80
 [userenv.shared]
 API_BEARER_TOKEN = "sk-soundseed-2026"
 RUNPOD_POD_URL = "https://kows2z63ecabf4-8888.proxy.runpod.net"
+ACESTEP_ENDPOINT_ID = "81evk991r9mrvg"
