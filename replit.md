@@ -112,7 +112,16 @@ All endpoints are prefixed with `/api/`. Key routes:
 - `AI_INTEGRATIONS_GEMINI_API_KEY` — Gemini API key
 - `AI_INTEGRATIONS_GEMINI_BASE_URL` — Gemini API base URL
 
+### RunPod Serverless GitHub-Build Deployment
+- Separate repo: `ace-step-runpod-serverless/` — ready to push to GitHub
+- RunPod builds Docker image directly from GitHub repo (no local Docker needed)
+- Structure: `worker/Dockerfile` + `worker/handler.py` + `worker/test_input.json`
+- Setup: Push to GitHub → Connect GitHub in RunPod Settings → Create Serverless Endpoint via UI
+- RunPod UI config: Branch `main`, Dockerfile Path `Dockerfile`, Build Context `worker`
+- Recommended GPU: 48 GB, Max workers: 2, Idle timeout: 1s, Execution timeout: 600s, FlashBoot enabled
+
 ## Recent Changes
+- **2026-02-20**: Created separate `ace-step-runpod-serverless/` repo for RunPod Serverless deployment via GitHub integration. No Docker Hub needed — RunPod builds image from GitHub repo directly. Includes worker/Dockerfile, handler.py, and setup instructions.
 - **2026-02-20**: Added Hugging Face Inference Endpoints deployment mode. Created `docker/ace-step-hf/` with FastAPI server and Dockerfile. Backend now supports 3 deployment modes (HF > Pod > Serverless) via env vars. Health endpoint shows current `deployMode`.
 - **2026-02-19**: Tested all 4 models on RTX 4090 with 150s blues tracks. Added http_server.py to Docker image for pod testing. Added CPU offload support for long audio generation (150s+). 4 models: turbo (8 steps), sft (32 steps), base (50 steps), turbo-shift3 (8 steps).
 - **2026-02-18**: Added dynamic model switching. Handler supports 4 DiT models (turbo/sft/base/turbo-shift3) with lazy loading and caching. Frontend model selector auto-sets recommended inference steps. Model parameter flows through API → routes → runpod → handler.

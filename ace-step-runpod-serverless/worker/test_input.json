@@ -1,0 +1,14 @@
+{
+  "input": {
+    "prompt": "upbeat electronic dance music with synth leads",
+    "lyrics": "[verse]\nFeel the rhythm in the night\nDancing under neon lights\n[chorus]\nLet the music take control\nFeel it deep inside your soul",
+    "duration": 60,
+    "model": "acestep-v15-turbo",
+    "inference_steps": 8,
+    "guidance_scale": 7.0,
+    "task_type": "text2music",
+    "audio_format": "mp3",
+    "seed": 42,
+    "thinking": true
+  }
+}
