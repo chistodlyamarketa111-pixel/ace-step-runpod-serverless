@@ -82,13 +82,25 @@ def _json_response(handler, data, status=200):
 
 def handle_health():
     available = [m for m in VALID_MODELS if os.path.exists(os.path.join(CHECKPOINT_DIR, m))]
+    try:
+        loaded = getattr(pipeline, "loaded", False) if pipeline else False
+    except Exception:
+        loaded = False
+    try:
+        gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "none"
+    except Exception:
+        gpu = "unknown"
+    try:
+        vram = round(torch.cuda.mem_get_info()[0] / 1e9, 1) if torch.cuda.is_available() else 0
+    except Exception:
+        vram = 0
     return {
         "status": "ok",
         "available_models": available,
         "current_model": current_model,
-        "pipeline_loaded": pipeline.loaded if pipeline else False,
-        "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "none",
-        "vram_gb": round(torch.cuda.get_device_properties(0).total_mem / 1e9, 1) if torch.cuda.is_available() else 0,
+        "pipeline_loaded": loaded,
+        "gpu": gpu,
+        "vram_gb": vram,
     }
 
 
