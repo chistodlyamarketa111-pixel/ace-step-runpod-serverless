@@ -96,11 +96,11 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/jobs", requireBearerAuth, async (_req, res) => {
+  app.get("/api/jobs", async (_req, res) => {
     res.json(await storage.getAllJobs());
   });
 
-  app.get("/api/jobs/:id", requireBearerAuth, async (req, res) => {
+  app.get("/api/jobs/:id", async (req, res) => {
     const job = await storage.getJob(req.params.id);
     if (!job) return res.status(404).json({ error: "Job not found" });
 
