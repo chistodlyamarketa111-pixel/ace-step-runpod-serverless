@@ -60,7 +60,29 @@ async function podGenerate(taskId: string, input: Record<string, any>): Promise<
       signal: AbortSignal.timeout(600000),
     });
 
-    const data = await response.json() as any;
+    const text = await response.text();
+    log(`[Pod] Response for ${taskId}: status=${response.status}, body length=${text.length}`, "runpod");
+
+    if (!text || text.length === 0) {
+      podJobs.set(taskId, {
+        status: "FAILED",
+        error: `Empty response from pod (HTTP ${response.status})`,
+      });
+      log(`[Pod] Generation ${taskId} failed: empty response`, "runpod");
+      return;
+    }
+
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      podJobs.set(taskId, {
+        status: "FAILED",
+        error: `Invalid JSON from pod: ${text.substring(0, 200)}`,
+      });
+      log(`[Pod] Generation ${taskId} failed: invalid JSON: ${text.substring(0, 200)}`, "runpod");
+      return;
+    }
 
     if (!response.ok || data.error) {
       podJobs.set(taskId, {
