@@ -247,6 +247,30 @@ def handle_generate(data):
     }, 200
 
 
+upload_chunks: dict = {}
+
+def handle_upload_chunk(data):
+    chunk = data.get("chunk", "")
+    index = data.get("index", 0)
+    total = data.get("total", 1)
+    filename = data.get("filename", "/workspace/http_server.py")
+
+    if filename not in upload_chunks:
+        upload_chunks[filename] = {}
+    upload_chunks[filename][index] = chunk
+
+    if len(upload_chunks[filename]) == total:
+        full_b64 = "".join(upload_chunks[filename][i] for i in range(total))
+        content = base64.b64decode(full_b64).decode("utf-8")
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        with open(filename, "w") as f:
+            f.write(content)
+        del upload_chunks[filename]
+        return {"status": "complete", "filename": filename, "size": len(content)}, 200
+
+    return {"status": "chunk_received", "index": index, "received": len(upload_chunks[filename]), "total": total}, 200
+
+
 class AceStepHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
@@ -255,12 +279,24 @@ class AceStepHandler(BaseHTTPRequestHandler):
             _json_response(self, {"error": "Not found"}, 404)
 
     def do_POST(self):
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length) if content_length > 0 else b"{}"
+            data = json.loads(body)
+        except Exception as e:
+            _json_response(self, {"error": f"Invalid request: {e}"}, 400)
+            return
+
         if self.path == "/generate":
             try:
-                content_length = int(self.headers.get("Content-Length", 0))
-                body = self.rfile.read(content_length) if content_length > 0 else b"{}"
-                data = json.loads(body)
                 result, status = handle_generate(data)
+                _json_response(self, result, status)
+            except Exception as e:
+                traceback.print_exc()
+                _json_response(self, {"error": str(e)}, 500)
+        elif self.path == "/upload-chunk":
+            try:
+                result, status = handle_upload_chunk(data)
                 _json_response(self, result, status)
             except Exception as e:
                 traceback.print_exc()
@@ -272,8 +308,38 @@ class AceStepHandler(BaseHTTPRequestHandler):
         print(f"[HTTP] {args[0]}")
 
 
+MODEL_REPOS = {
+    "acestep-v15-turbo": "ACE-Step/Ace-Step1.5",
+    "acestep-v15-sft": "ACE-Step/acestep-v15-sft",
+    "acestep-v15-base": "ACE-Step/acestep-v15-base",
+    "acestep-v15-turbo-shift3": "ACE-Step/acestep-v15-turbo-shift3",
+}
+
+def ensure_models_downloaded():
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError:
+        print("[ACE-Step] huggingface_hub not installed, skipping model download")
+        return
+    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+    for model_name, repo in MODEL_REPOS.items():
+        model_dir = os.path.join(CHECKPOINT_DIR, model_name)
+        if os.path.exists(model_dir) and any(f.endswith((".pt", ".safetensors", ".bin")) for f in os.listdir(model_dir)):
+            print(f"[ACE-Step] Model {model_name} already exists at {model_dir}")
+            continue
+        print(f"[ACE-Step] Downloading {model_name} from {repo}...")
+        try:
+            snapshot_download(repo, local_dir=model_dir)
+            print(f"[ACE-Step] Downloaded {model_name}")
+        except Exception as e:
+            print(f"[ACE-Step] Failed to download {model_name}: {e}")
+
+
 if __name__ == "__main__":
     print(f"[ACE-Step] Checkpoint dir: {CHECKPOINT_DIR}")
+
+    ensure_models_downloaded()
+
     available = [m for m in VALID_MODELS if os.path.exists(os.path.join(CHECKPOINT_DIR, m))]
     print(f"[ACE-Step] Available models: {available}")
 

@@ -5,8 +5,7 @@ if (!RUNPOD_API_KEY) {
 }
 
 const GRAPHQL_URL = "https://api.runpod.io/graphql";
-const DOCKER_IMAGE = "runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04";
-const REPLIT_RAW_URL = "https://30ae1522-eccc-49e0-b335-f4d16f2f3093-00-3ixp57dkvat9h.picard.replit.dev";
+const DOCKER_IMAGE = "ruslanmusin/ace-step-serverless:latest";
 
 async function gql(query: string, variables: Record<string, any> = {}) {
   const res = await fetch(GRAPHQL_URL, {
@@ -28,7 +27,7 @@ async function gql(query: string, variables: Record<string, any> = {}) {
 const action = process.argv[2] || "help";
 
 async function createPod() {
-  const gpuId = process.argv[3] || "NVIDIA RTX 4090";
+  const gpuId = process.argv[3] || "NVIDIA RTX A5000";
   const imageName = process.argv[4] || DOCKER_IMAGE;
 
   console.log(`Creating pod with GPU: ${gpuId}`);
@@ -60,35 +59,14 @@ async function createPod() {
 
   const startupScript = `bash -c '
 set -e
-echo "=== Installing dependencies ==="
-apt-get update -qq && apt-get install -y -qq ffmpeg libsndfile1 > /dev/null 2>&1
-pip install -q huggingface_hub soundfile
-pip install -q git+https://github.com/ACE-Step/ACE-Step.git
-
-echo "=== Downloading models ==="
-mkdir -p /workspace/checkpoints
-python3 -c "
-from huggingface_hub import snapshot_download
-import os
-d = \\"/workspace/checkpoints\\"
-print(\\"Downloading turbo...\\")
-snapshot_download(\\"ACE-Step/Ace-Step1.5\\", local_dir=d)
-print(\\"Downloading sft...\\")
-snapshot_download(\\"ACE-Step/acestep-v15-sft\\", local_dir=os.path.join(d, \\"acestep-v15-sft\\"))
-print(\\"Downloading base...\\")
-snapshot_download(\\"ACE-Step/acestep-v15-base\\", local_dir=os.path.join(d, \\"acestep-v15-base\\"))
-print(\\"Downloading turbo-shift3...\\")
-snapshot_download(\\"ACE-Step/acestep-v15-turbo-shift3\\", local_dir=os.path.join(d, \\"acestep-v15-turbo-shift3\\"))
-print(\\"ALL MODELS DOWNLOADED\\")
-"
-
-echo "=== Downloading server script ==="
-mkdir -p /app
-python3 -c "import urllib.request; urllib.request.urlretrieve(\\"${REPLIT_RAW_URL}/raw/http_server.py\\", \\"/app/http_server.py\\"); print(\\"SERVER READY\\")"
-
-echo "=== Starting HTTP server on port 8888 ==="
-cd /app
-ACESTEP_CHECKPOINT_DIR=/workspace/checkpoints ACESTEP_CPU_OFFLOAD=true python3 -u http_server.py
+echo "=== Starting ACE-Step HTTP server ==="
+pip install -q huggingface_hub 2>/dev/null || true
+cd /workspace
+if [ ! -f /workspace/http_server.py ]; then
+  echo "http_server.py not found, copying from Docker image..."
+  cp /app/http_server.py /workspace/http_server.py 2>/dev/null || echo "No /app/http_server.py in image"
+fi
+ACESTEP_CHECKPOINT_DIR=/workspace/checkpoints ACESTEP_CPU_OFFLOAD=true PORT=8888 python3 -u http_server.py
 '`;
 
   const input = {
@@ -119,12 +97,9 @@ ACESTEP_CHECKPOINT_DIR=/workspace/checkpoints ACESTEP_CPU_OFFLOAD=true python3 -
   console.log(`Image: ${pod.imageName}`);
   console.log(`\nPod ID: ${pod.id}`);
   console.log(`Monitor: https://www.runpod.io/console/pods/${pod.id}`);
-  console.log(`\nVolume: 20GB (models saved, persist across stop/resume)`);
-  console.log(`\nStartup steps (~10-15 min first time, ~2 min after resume):`);
-  console.log(`  1. Install ffmpeg, ace-step package`);
-  console.log(`  2. Download 4 models to /workspace (saved on volume)`);
-  console.log(`  3. Download http_server.py from Replit`);
-  console.log(`  4. Start HTTP server on port 8888`);
+  console.log(`\nDocker image has all deps pre-installed.`);
+  console.log(`Models on volume /workspace/checkpoints (persist across stop/resume).`);
+  console.log(`If models missing, they download from HuggingFace on first run (~10 min).`);
   console.log(`\nTest URL: https://${pod.id}-8888.proxy.runpod.net/health`);
   console.log(`\nCommands:`);
   console.log(`  Stop:    cd Music-Generation-API && npx tsx scripts/create-test-pod.ts stop ${pod.id}`);
@@ -190,7 +165,7 @@ async function getPodStatus(podId?: string) {
     for (const p of pod.runtime.ports) {
       console.log(`  ${p.privatePort} -> ${p.ip}:${p.publicPort} (${p.type})`);
     }
-    console.log(`\nTest URL: https://${id}-8888.proxy.runpod.net/health`);
+    console.log(`\nProxy URL: https://${id}-8888.proxy.runpod.net`);
   }
 
   if (pod.runtime?.gpus) {
@@ -198,6 +173,14 @@ async function getPodStatus(podId?: string) {
     for (const g of pod.runtime.gpus) {
       console.log(`  ${g.id}: util=${g.gpuUtilPercent}%, mem=${g.memoryUtilPercent}%`);
     }
+  }
+
+  try {
+    const healthRes = await fetch(`https://${id}-8888.proxy.runpod.net/health`, { signal: AbortSignal.timeout(10000) });
+    const health = await healthRes.json();
+    console.log(`\nServer health: ${JSON.stringify(health)}`);
+  } catch {
+    console.log(`\nServer not responding yet (may still be starting).`);
   }
 }
 
@@ -219,6 +202,7 @@ async function stopPod() {
 
   const data = await gql(query, { input: { podId: id } });
   console.log(`Pod ${id} stopped. Status: ${data.podStop.desiredStatus}`);
+  console.log(`Volume /workspace preserved (models saved).`);
   console.log(`\nTo resume: npx tsx scripts/create-test-pod.ts resume ${id}`);
 }
 
@@ -247,7 +231,7 @@ async function resumePod() {
   console.log(`Pod ${id} resumed.`);
   console.log(`Status: ${pod.desiredStatus}`);
   console.log(`GPU: ${pod.machine?.gpuDisplayName}`);
-  console.log(`\nHTTP server will be ready in ~1-2 minutes.`);
+  console.log(`\nHTTP server starts automatically (~1-2 min).`);
   console.log(`Test URL: https://${id}-8888.proxy.runpod.net/health`);
 }
 
@@ -265,7 +249,7 @@ async function terminatePod() {
   `;
 
   await gql(query, { input: { podId: id } });
-  console.log(`Pod ${id} terminated (deleted permanently).`);
+  console.log(`Pod ${id} terminated (deleted permanently, volume lost).`);
 }
 
 async function listPods() {
@@ -346,36 +330,22 @@ async function runTest(podId: string, model: string) {
   console.log(`\n--- Testing model: ${model} ---`);
 
   const baseUrl = `https://${podId}-8888.proxy.runpod.net`;
-  console.log(`Endpoint: ${baseUrl}`);
-
-  try {
-    const healthRes = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(10000) });
-    const health = await healthRes.json();
-    console.log(`Health: ${JSON.stringify(health)}`);
-  } catch (e: any) {
-    console.log(`Server not ready: ${e.message}`);
-    return;
-  }
 
   const testPayload = {
-    input: {
-      prompt: "A dreamy lo-fi hip hop beat with warm piano chords and gentle boom-bap rhythm",
-      lyrics: "[Instrumental]",
-      duration: 30,
-      model,
-      task_type: "text2music",
-      audio_format: "mp3",
-      guidance_scale: 7.0,
-      thinking: true,
-      seed: 42,
-    },
+    prompt: "A dreamy lo-fi hip hop beat with warm piano chords and gentle boom-bap rhythm",
+    lyrics: "[Instrumental]",
+    duration: 30,
+    model,
+    audio_format: "mp3",
+    guidance_scale: 7.0,
+    seed: 42,
   };
 
-  console.log(`Sending request...`);
+  console.log(`Sending request to ${baseUrl}/generate ...`);
   const start = Date.now();
 
   try {
-    const res = await fetch(`${baseUrl}/runsync`, {
+    const res = await fetch(`${baseUrl}/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(testPayload),
@@ -383,15 +353,15 @@ async function runTest(podId: string, model: string) {
     });
 
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-    const result = await res.json();
+    const result = await res.json() as any;
 
-    if (result.output?.error) {
-      console.log(`ERROR (${elapsed}s): ${result.output.error}`);
-    } else if (result.output?.audio_base64) {
-      const audioSize = Math.round((result.output.audio_base64.length * 3) / 4 / 1024);
-      console.log(`SUCCESS (${elapsed}s): ${audioSize}KB audio, format=${result.output.audio_format}`);
-      console.log(`  Duration: ${result.output.duration}s, Sample rate: ${result.output.sample_rate}`);
-      if (result.output.model) console.log(`  Model used: ${result.output.model}`);
+    if (result.error) {
+      console.log(`ERROR (${elapsed}s): ${result.error}`);
+    } else if (result.audio_base64) {
+      const audioSize = Math.round((result.audio_base64.length * 3) / 4 / 1024);
+      console.log(`SUCCESS (${elapsed}s): ${audioSize}KB audio, format=${result.audio_format || "wav"}`);
+      if (result.duration) console.log(`  Duration: ${result.duration}s`);
+      if (result.model) console.log(`  Model used: ${result.model}`);
     } else {
       console.log(`UNEXPECTED (${elapsed}s):`, JSON.stringify(result).slice(0, 500));
     }
@@ -408,7 +378,17 @@ async function testAllModels() {
     process.exit(1);
   }
 
-  const models = ["turbo", "acestep-v15-sft", "acestep-v15-base", "acestep-v15-turbo-shift3"];
+  const baseUrl = `https://${podId}-8888.proxy.runpod.net`;
+  try {
+    const healthRes = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(10000) });
+    const health = await healthRes.json();
+    console.log(`Server health: ${JSON.stringify(health)}`);
+  } catch (e: any) {
+    console.log(`Server not ready: ${e.message}`);
+    return;
+  }
+
+  const models = ["acestep-v15-turbo", "acestep-v15-sft", "acestep-v15-base", "acestep-v15-turbo-shift3"];
   console.log(`Testing ${models.length} models on pod ${podId}...`);
 
   for (const model of models) {
@@ -420,14 +400,63 @@ async function testAllModels() {
 
 async function testSingleModel() {
   const podId = process.argv[3];
-  const model = process.argv[4] || "turbo";
+  const model = process.argv[4] || "acestep-v15-turbo";
   if (!podId) {
     console.error("Usage: npx tsx scripts/create-test-pod.ts test1 <pod-id> [model]");
-    console.error("Models: turbo, acestep-v15-sft, acestep-v15-base, acestep-v15-turbo-shift3");
+    console.error("Models: acestep-v15-turbo, acestep-v15-sft, acestep-v15-base, acestep-v15-turbo-shift3");
     process.exit(1);
   }
 
   await runTest(podId, model);
+}
+
+async function deployServer() {
+  const podId = process.argv[3];
+  if (!podId) {
+    console.error("Usage: npx tsx scripts/create-test-pod.ts deploy <pod-id>");
+    console.error("Uploads http_server.py to the pod and restarts the server.");
+    process.exit(1);
+  }
+
+  const baseUrl = `https://${podId}-8888.proxy.runpod.net`;
+  const fs = await import("fs");
+  const path = await import("path");
+
+  const serverPath = path.resolve(import.meta.dirname || __dirname, "../docker/ace-step/http_server.py");
+  if (!fs.existsSync(serverPath)) {
+    console.error(`http_server.py not found at ${serverPath}`);
+    process.exit(1);
+  }
+
+  const code = fs.readFileSync(serverPath, "utf-8");
+  const encoded = Buffer.from(code).toString("base64");
+  const chunks: string[] = [];
+  const CHUNK_SIZE = 50000;
+  for (let i = 0; i < encoded.length; i += CHUNK_SIZE) {
+    chunks.push(encoded.slice(i, i + CHUNK_SIZE));
+  }
+
+  console.log(`Uploading http_server.py (${code.length} bytes, ${chunks.length} chunks)...`);
+
+  for (let i = 0; i < chunks.length; i++) {
+    const payload = { chunk: chunks[i], index: i, total: chunks.length, filename: "/workspace/http_server.py" };
+    const res = await fetch(`${baseUrl}/upload-chunk`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000),
+    });
+    const result = await res.json() as any;
+    if (result.error) {
+      console.error(`Chunk ${i} failed: ${result.error}`);
+      return;
+    }
+    console.log(`  Chunk ${i + 1}/${chunks.length} uploaded`);
+  }
+
+  console.log(`\nServer updated. Restart pod to apply:`);
+  console.log(`  npx tsx scripts/create-test-pod.ts stop ${podId}`);
+  console.log(`  npx tsx scripts/create-test-pod.ts resume ${podId}`);
 }
 
 switch (action) {
@@ -458,6 +487,9 @@ switch (action) {
   case "test1":
     testSingleModel();
     break;
+  case "deploy":
+    deployServer();
+    break;
   default:
     console.log(`
 ACE-Step Pod Manager
@@ -466,16 +498,23 @@ Docker image: ${DOCKER_IMAGE}
 Usage: npx tsx scripts/create-test-pod.ts <command> [args]
 
 Commands:
-  create [gpu-id]              - Create pod (default: NVIDIA RTX 4090)
+  create [gpu-id] [image]      - Create pod (default GPU: NVIDIA RTX A5000)
   list                         - List all your pods
-  status <pod-id>              - Get pod status and ports
-  stop <pod-id>                - Stop pod (keeps it, no charges)
+  status <pod-id>              - Get pod status, ports, and health
+  stop <pod-id>                - Stop pod (volume preserved, no GPU charges)
   resume <pod-id>              - Resume stopped pod
-  terminate <pod-id>           - Delete pod permanently
+  terminate <pod-id>           - Delete pod permanently (volume lost!)
   gpus                         - List available GPUs with pricing
-  test <pod-id>                - Test all 4 models
+  test <pod-id>                - Test all 4 models (30s each)
   test1 <pod-id> [model]       - Test single model
+  deploy <pod-id>              - Upload http_server.py to pod
 
-Models: turbo, acestep-v15-sft, acestep-v15-base, acestep-v15-turbo-shift3
+Models: acestep-v15-turbo, acestep-v15-sft, acestep-v15-base, acestep-v15-turbo-shift3
+
+Examples:
+  npx tsx scripts/create-test-pod.ts create "NVIDIA RTX A5000"
+  npx tsx scripts/create-test-pod.ts test kows2z63ecabf4
+  npx tsx scripts/create-test-pod.ts test1 kows2z63ecabf4 acestep-v15-sft
+  npx tsx scripts/create-test-pod.ts deploy kows2z63ecabf4
 `);
 }
