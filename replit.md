@@ -86,16 +86,34 @@ All endpoints are prefixed with `/api/`. Key routes:
 - Configured via `AI_INTEGRATIONS_GEMINI_API_KEY` and `AI_INTEGRATIONS_GEMINI_BASE_URL` env vars
 - Client implementation: `server/gemini.ts`
 
+### Hugging Face Inference Endpoints
+- Alternative to RunPod for GPU inference
+- Custom Docker container: `docker/ace-step-hf/` — FastAPI server with same API as pod mode
+- Build: `cd docker/ace-step-hf && ./build.sh <image-name> latest`
+- Base image: `nvidia/cuda:12.4.1-devel-ubuntu22.04` + ACE-Step v1.5 + FastAPI
+- Models pre-downloaded at build time (all 4 variants)
+- Env var: `HF_ENDPOINT_URL` — URL of deployed HF endpoint
+- Env var: `HF_API_TOKEN` — HF API token for authentication (optional)
+
+### Deployment Modes (priority: HF > Pod > Serverless)
+- **HF mode**: Set `HF_ENDPOINT_URL` → routes to HF Inference Endpoint
+- **Pod mode**: Set `RUNPOD_POD_URL` → routes to RunPod hourly pod
+- **Serverless mode**: Set `ACESTEP_ENDPOINT_ID` + `RUNPOD_API_KEY` → routes to RunPod Serverless
+
 ### Environment Variables Required
 - `DATABASE_URL` — PostgreSQL connection string
 - `ACESTEP_ENDPOINT_ID` — RunPod Serverless endpoint ID for ACE-Step
 - `RUNPOD_API_KEY` — RunPod API key for serverless endpoints
+- `RUNPOD_POD_URL` — RunPod pod HTTP server URL (pod mode)
+- `HF_ENDPOINT_URL` — Hugging Face Inference Endpoint URL (HF mode)
+- `HF_API_TOKEN` — HF API token (optional, for protected endpoints)
 - `API_BEARER_TOKEN` — Bearer token for API authentication
 - `SUNO_API_KEY` — Suno API key for comparisons (optional)
 - `AI_INTEGRATIONS_GEMINI_API_KEY` — Gemini API key
 - `AI_INTEGRATIONS_GEMINI_BASE_URL` — Gemini API base URL
 
 ## Recent Changes
+- **2026-02-20**: Added Hugging Face Inference Endpoints deployment mode. Created `docker/ace-step-hf/` with FastAPI server and Dockerfile. Backend now supports 3 deployment modes (HF > Pod > Serverless) via env vars. Health endpoint shows current `deployMode`.
 - **2026-02-19**: Tested all 4 models on RTX 4090 with 150s blues tracks. Added http_server.py to Docker image for pod testing. Added CPU offload support for long audio generation (150s+). 4 models: turbo (8 steps), sft (32 steps), base (50 steps), turbo-shift3 (8 steps).
 - **2026-02-18**: Added dynamic model switching. Handler supports 4 DiT models (turbo/sft/base/turbo-shift3) with lazy loading and caching. Frontend model selector auto-sets recommended inference steps. Model parameter flows through API → routes → runpod → handler.
 - **2026-02-18**: Created full Docker image for ACE-Step v1.5 RunPod Serverless deployment (`docker/ace-step/`). Handler uses proper v1.5 inference API with GenerationParams + generate_music. Models pre-downloaded at build time. Cleaned up old engine references (HeartMuLa, YuE, DiffRhythm) from frontend and backend.

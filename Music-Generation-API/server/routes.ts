@@ -9,6 +9,7 @@ import { log } from "./index";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { requireBearerAuth } from "./middleware/auth";
+import { getMode } from "./runpod";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -32,6 +33,7 @@ export async function registerRoutes(
       api: true,
       aceStep: aceStepHealthy,
       aceStepConfigured: aceStepEngine?.isConfigured() ?? false,
+      deployMode: getMode(),
     });
   });
 

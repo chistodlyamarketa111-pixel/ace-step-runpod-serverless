@@ -3,10 +3,16 @@ import { log } from "./index";
 const ACESTEP_ENDPOINT_ID = process.env.ACESTEP_ENDPOINT_ID;
 const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
 const RUNPOD_POD_URL = process.env.RUNPOD_POD_URL;
+const HF_ENDPOINT_URL = process.env.HF_ENDPOINT_URL;
+const HF_API_TOKEN = process.env.HF_API_TOKEN;
 
-const MODE = RUNPOD_POD_URL ? "pod" : "serverless";
+type DeployMode = "hf" | "pod" | "serverless";
 
-if (MODE === "serverless") {
+const MODE: DeployMode = HF_ENDPOINT_URL ? "hf" : RUNPOD_POD_URL ? "pod" : "serverless";
+
+if (MODE === "hf") {
+  console.log(`[HF] Using Hugging Face Inference Endpoint: ${HF_ENDPOINT_URL}`);
+} else if (MODE === "serverless") {
   if (!ACESTEP_ENDPOINT_ID) {
     console.warn("ACESTEP_ENDPOINT_ID not set - ACE-Step Serverless will not work");
   }
@@ -33,8 +39,21 @@ function getHeaders(): Record<string, string> {
 }
 
 export function isConfigured(): boolean {
+  if (MODE === "hf") return Boolean(HF_ENDPOINT_URL);
   if (MODE === "pod") return Boolean(RUNPOD_POD_URL);
   return Boolean(ACESTEP_ENDPOINT_ID && RUNPOD_API_KEY);
+}
+
+export function getMode(): string {
+  return MODE;
+}
+
+function getHfHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (HF_API_TOKEN) {
+    headers["Authorization"] = `Bearer ${HF_API_TOKEN}`;
+  }
+  return headers;
 }
 
 interface PodJobResult {
@@ -125,6 +144,83 @@ async function podGenerate(taskId: string, input: Record<string, any>): Promise<
   }
 }
 
+async function hfGenerate(taskId: string, input: Record<string, any>): Promise<void> {
+  try {
+    log(`[HF] Starting async generation ${taskId}: model=${input.model || "default"}`, "runpod");
+
+    const response = await fetch(`${HF_ENDPOINT_URL}/generate-async`, {
+      method: "POST",
+      headers: getHfHeaders(),
+      body: JSON.stringify(input),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    const text = await response.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      podJobs.set(taskId, { status: "FAILED", error: `Invalid JSON from HF: ${text.substring(0, 200)}` });
+      return;
+    }
+
+    if (!data.id) {
+      podJobs.set(taskId, { status: "FAILED", error: data.error || "No job ID returned" });
+      return;
+    }
+
+    const hfJobId = data.id;
+    log(`[HF] Async job submitted: ${hfJobId} for task ${taskId}`, "runpod");
+
+    const maxWait = 600000;
+    const pollInterval = 3000;
+    const start = Date.now();
+
+    while (Date.now() - start < maxWait) {
+      await new Promise(r => setTimeout(r, pollInterval));
+
+      try {
+        const statusRes = await fetch(`${HF_ENDPOINT_URL}/job/${hfJobId}`, {
+          headers: getHfHeaders(),
+          signal: AbortSignal.timeout(15000),
+        });
+        const statusText = await statusRes.text();
+        let statusData: any;
+        try {
+          statusData = JSON.parse(statusText);
+        } catch {
+          log(`[HF] Poll ${hfJobId}: non-JSON response, retrying...`, "runpod");
+          continue;
+        }
+
+        if (statusData.status === "COMPLETED") {
+          podJobs.set(taskId, {
+            status: "COMPLETED",
+            audio_base64: statusData.audio_base64,
+            audio_format: statusData.audio_format || "mp3",
+            generation_time: statusData.generation_time,
+            model: statusData.model,
+          });
+          log(`[HF] Generation ${taskId} completed in ${statusData.generation_time}s`, "runpod");
+          return;
+        } else if (statusData.status === "FAILED") {
+          podJobs.set(taskId, { status: "FAILED", error: statusData.error || "Generation failed on HF" });
+          log(`[HF] Generation ${taskId} failed: ${statusData.error}`, "runpod");
+          return;
+        }
+      } catch (e: any) {
+        log(`[HF] Poll error for ${hfJobId}: ${e.message}, retrying...`, "runpod");
+      }
+    }
+
+    podJobs.set(taskId, { status: "FAILED", error: "Generation timeout (10 min)" });
+    log(`[HF] Generation ${taskId} timed out after 10 min`, "runpod");
+  } catch (e: any) {
+    podJobs.set(taskId, { status: "FAILED", error: e.message });
+    log(`[HF] Generation ${taskId} error: ${e.message}`, "runpod");
+  }
+}
+
 export async function submitTask(params: {
   prompt: string;
   lyrics?: string;
@@ -147,7 +243,7 @@ export async function submitTask(params: {
   model?: string;
 }): Promise<{ task_id: string }> {
   if (!isConfigured()) {
-    throw new Error("ACE-Step is not configured. Set RUNPOD_POD_URL or ACESTEP_ENDPOINT_ID + RUNPOD_API_KEY.");
+    throw new Error("ACE-Step is not configured. Set HF_ENDPOINT_URL, RUNPOD_POD_URL, or ACESTEP_ENDPOINT_ID + RUNPOD_API_KEY.");
   }
 
   const caption = buildCaption(params);
@@ -165,6 +261,14 @@ export async function submitTask(params: {
   if (params.batch_size !== undefined && params.batch_size > 1) input.batch_size = params.batch_size;
   if (params.seed !== undefined && params.seed !== -1) input.seed = params.seed;
   if (params.model) input.model = params.model;
+
+  if (MODE === "hf") {
+    podJobCounter++;
+    const taskId = `hf-${Date.now()}-${podJobCounter}`;
+    podJobs.set(taskId, { status: "IN_PROGRESS" });
+    hfGenerate(taskId, input);
+    return { task_id: taskId };
+  }
 
   if (MODE === "pod") {
     podJobCounter++;
@@ -212,7 +316,7 @@ export async function queryTaskStatus(taskId: string): Promise<{
     throw new Error("ACE-Step is not configured.");
   }
 
-  if (MODE === "pod" || taskId.startsWith("pod-")) {
+  if (MODE === "hf" || MODE === "pod" || taskId.startsWith("pod-") || taskId.startsWith("hf-")) {
     const job = podJobs.get(taskId);
     if (!job) {
       return { status: "FAILED", error: "Job not found" };
@@ -278,7 +382,7 @@ export async function fetchAudio(audioIdentifier: string): Promise<{ buffer: Buf
     throw new Error("ACE-Step is not configured.");
   }
 
-  if (MODE === "pod" || audioIdentifier.startsWith("pod-")) {
+  if (MODE === "hf" || MODE === "pod" || audioIdentifier.startsWith("pod-") || audioIdentifier.startsWith("hf-")) {
     const job = podJobs.get(audioIdentifier);
     if (!job || job.status !== "COMPLETED" || !job.audio_base64) {
       throw new Error(`Job ${audioIdentifier} audio not available`);
@@ -318,6 +422,20 @@ export async function fetchAudio(audioIdentifier: string): Promise<{ buffer: Buf
 }
 
 export async function checkHealth(): Promise<boolean> {
+  if (MODE === "hf") {
+    try {
+      const response = await fetch(`${HF_ENDPOINT_URL}/health`, {
+        headers: getHfHeaders(),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) return false;
+      const data = await response.json() as any;
+      return data.status === "ok" && data.pipeline_loaded === true;
+    } catch {
+      return false;
+    }
+  }
+
   if (MODE === "pod") {
     try {
       const response = await fetch(`${RUNPOD_POD_URL}/health`, {
@@ -358,6 +476,25 @@ export async function getPodDiagnostics(): Promise<Record<string, any>> {
     mode: MODE,
     timestamp: new Date().toISOString(),
   };
+
+  if (MODE === "hf") {
+    diagnostics.hfUrl = HF_ENDPOINT_URL;
+    try {
+      const response = await fetch(`${HF_ENDPOINT_URL}/health`, {
+        headers: getHfHeaders(),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (response.ok) {
+        diagnostics.health = await response.json();
+      } else {
+        diagnostics.health = { status: "unreachable", code: response.status };
+      }
+    } catch (e: any) {
+      diagnostics.health = { error: e.message };
+    }
+    diagnostics.activeJobs = podJobs.size;
+    return diagnostics;
+  }
 
   if (MODE === "pod") {
     diagnostics.podUrl = RUNPOD_POD_URL;
