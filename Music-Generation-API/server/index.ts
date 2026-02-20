@@ -10,7 +10,7 @@ const httpServer = createServer(app);
 
 import fs from "fs";
 import pathModule from "path";
-app.get("/raw/http_server.py", (_req, res) => {
+app.get("/api/raw/http_server.py", (_req, res) => {
   const filePath = pathModule.resolve(process.cwd(), "docker/ace-step/http_server.py");
   if (fs.existsSync(filePath)) {
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
