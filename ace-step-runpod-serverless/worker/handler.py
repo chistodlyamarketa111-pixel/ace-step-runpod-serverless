@@ -1,43 +1,36 @@
 #!/usr/bin/env python3
 """
 ACE-Step v1.5 — RunPod Serverless Handler
-
-Loads the ACE-Step v1.5 model (DiT + LM) and processes music generation
-requests via RunPod's serverless infrastructure.
-
-Supports:
-  - text2music: Generate music from text prompt + lyrics
-  - cover: Generate a cover of a reference audio
-  - repaint: Repaint a section of existing audio
-
-Models:
-  - acestep-v15-turbo: 8 steps (fastest, default)
-  - acestep-v15-sft: 32 steps (best quality)
-  - acestep-v15-base: 50 steps (original)
-  - acestep-v15-turbo-shift3: 8 steps (alternative fast)
+LAZY LOADING: Models load on first request, not at startup.
+Supports LoRA adapters for style customization.
 """
 
 import base64
 import io
 import os
+import sys
 import time
 import traceback
+import tempfile
+
+print("[ACE-Step] Handler starting (lazy loading mode)...", flush=True)
 
 import runpod
 import torch
-import soundfile as sf
+from acestep.handler import AceStepHandler
+from acestep.inference import GenerationParams, GenerationConfig, generate_music
 
 CHECKPOINT_DIR = os.environ.get("ACESTEP_CHECKPOINT_DIR", "/app/checkpoints")
-DEFAULT_DIT_MODEL = os.environ.get("ACESTEP_DIT_MODEL", "acestep-v15-turbo")
+PROJECT_ROOT = os.environ.get("ACESTEP_PROJECT_ROOT", "/app")
+DEFAULT_MODEL = os.environ.get("ACESTEP_DIT_MODEL", "acestep-v15-turbo")
 LM_MODEL = os.environ.get("ACESTEP_LM_MODEL", "acestep-5Hz-lm-1.7B")
-CPU_OFFLOAD = os.environ.get("ACESTEP_CPU_OFFLOAD", "false").lower() == "true"
+LORA_DIR = os.environ.get("ACESTEP_LORA_DIR", "/app/loras")
+NETWORK_VOLUME_LORA_DIR = os.environ.get("NETWORK_VOLUME_LORA_DIR", "/runpod-volume/loras")
 
-VALID_MODELS = {
-    "acestep-v15-turbo",
-    "acestep-v15-sft",
-    "acestep-v15-base",
-    "acestep-v15-turbo-shift3",
-}
+dit_handler = None
+llm_handler = None
+models_loaded = False
+current_lora = None
 
 DEFAULT_STEPS = {
     "acestep-v15-turbo": 8,
@@ -46,93 +39,149 @@ DEFAULT_STEPS = {
     "acestep-v15-turbo-shift3": 8,
 }
 
-dit_handlers = {}
-llm_handler = None
-_gpu_initialized = False
 
-
-def _init_gpu():
-    global _gpu_initialized
-    if _gpu_initialized:
+def _scan_lora_dir(directory, loras):
+    if not os.path.exists(directory):
         return
-    from acestep.gpu_config import get_gpu_config, set_global_gpu_config
-    gpu_config = get_gpu_config()
-    set_global_gpu_config(gpu_config)
-    print(f"[ACE-Step] GPU config: {gpu_config}")
-    _gpu_initialized = True
+    for name in os.listdir(directory):
+        lora_path = os.path.join(directory, name)
+        if os.path.isdir(lora_path):
+            config_file = os.path.join(lora_path, "adapter_config.json")
+            safetensors = os.path.join(lora_path, "adapter_model.safetensors")
+            bin_file = os.path.join(lora_path, "adapter_model.bin")
+            if os.path.exists(config_file) and (os.path.exists(safetensors) or os.path.exists(bin_file)):
+                source = "volume" if directory == NETWORK_VOLUME_LORA_DIR else "builtin"
+                loras[name] = {"path": lora_path, "source": source}
+                print(f"[ACE-Step] Found LoRA: {name} -> {lora_path} ({source})", flush=True)
 
 
-def get_dit_handler(model_name: str):
-    global dit_handlers
-    if model_name in dit_handlers:
-        return dit_handlers[model_name]
+def scan_available_loras():
+    loras = {}
+    _scan_lora_dir(LORA_DIR, loras)
+    _scan_lora_dir(NETWORK_VOLUME_LORA_DIR, loras)
+    return loras
 
-    _init_gpu()
 
-    from acestep.handler import AceStepHandler
+def apply_lora(lora_name, lora_scale=1.0):
+    global dit_handler, current_lora
 
-    dit_path = os.path.join(CHECKPOINT_DIR, model_name)
-    if not os.path.exists(dit_path):
-        raise ValueError(f"Model '{model_name}' not found at {dit_path}. Available: {list(VALID_MODELS)}")
+    if not lora_name or lora_name == "none":
+        if current_lora:
+            try:
+                dit_handler.unload_lora()
+                print(f"[ACE-Step] Unloaded LoRA: {current_lora}", flush=True)
+                current_lora = None
+            except Exception as e:
+                print(f"[ACE-Step] Error unloading LoRA: {e}", flush=True)
+        return True
 
-    print(f"[ACE-Step] Loading DiT model: {model_name} from {dit_path}")
+    if current_lora == lora_name:
+        print(f"[ACE-Step] LoRA already loaded: {lora_name}", flush=True)
+        return True
+
+    available = scan_available_loras()
+    if lora_name not in available:
+        print(f"[ACE-Step] LoRA not found: {lora_name}. Available: {list(available.keys())}", flush=True)
+        return False
+
+    try:
+        if current_lora:
+            dit_handler.unload_lora()
+            print(f"[ACE-Step] Unloaded previous LoRA: {current_lora}", flush=True)
+
+        lora_info = available[lora_name]
+        lora_path = lora_info["path"]
+        print(f"[ACE-Step] Loading LoRA: {lora_name} (scale={lora_scale}) from {lora_path} ({lora_info['source']})", flush=True)
+        dit_handler.load_lora(lora_path=lora_path, lora_scale=lora_scale)
+        current_lora = lora_name
+        print(f"[ACE-Step] LoRA loaded successfully: {lora_name}", flush=True)
+        return True
+    except Exception as e:
+        print(f"[ACE-Step] Error loading LoRA {lora_name}: {e}", flush=True)
+        traceback.print_exc()
+        current_lora = None
+        return False
+
+
+def ensure_models_loaded():
+    global dit_handler, llm_handler, models_loaded
+    if models_loaded:
+        return True
+
+    print(f"[ACE-Step] Loading models (first request)...", flush=True)
     start = time.time()
-    handler = AceStepHandler(
-        checkpoint_dir=CHECKPOINT_DIR,
-        dit_model_path=dit_path,
-        cpu_offload=CPU_OFFLOAD,
-    )
-    elapsed = time.time() - start
-    print(f"[ACE-Step] DiT model '{model_name}' loaded in {elapsed:.1f}s")
 
-    dit_handlers[model_name] = handler
-    return handler
+    try:
+        print(f"[ACE-Step] Creating AceStepHandler...", flush=True)
+        dit_handler = AceStepHandler()
+        print(f"[ACE-Step] AceStepHandler created OK", flush=True)
 
-
-def get_llm_handler():
-    global llm_handler
-    if llm_handler is not None:
-        return llm_handler
-
-    _init_gpu()
-
-    lm_path = os.path.join(CHECKPOINT_DIR, LM_MODEL)
-    if os.path.exists(lm_path):
-        from acestep.llm_inference import LLMHandler
-        print(f"[ACE-Step] Loading LLM: {LM_MODEL}")
-        start = time.time()
-        llm_handler = LLMHandler(
-            model_path=lm_path,
-            checkpoint_dir=CHECKPOINT_DIR,
+        print(f"[ACE-Step] Calling initialize_service(project_root={PROJECT_ROOT}, config_path={DEFAULT_MODEL})...", flush=True)
+        status, success = dit_handler.initialize_service(
+            project_root=PROJECT_ROOT,
+            config_path=DEFAULT_MODEL,
+            device="cuda",
         )
-        elapsed = time.time() - start
-        print(f"[ACE-Step] LLM loaded in {elapsed:.1f}s")
-    else:
+        print(f"[ACE-Step] initialize_service: success={success}, status={status[:300]}", flush=True)
+    except Exception as e:
+        print(f"[ACE-Step] DiT init ERROR: {e}", flush=True)
+        traceback.print_exc()
+        dit_handler = None
+        return False
+
+    try:
+        lm_path = os.path.join(CHECKPOINT_DIR, LM_MODEL)
+        if os.path.exists(lm_path):
+            print(f"[ACE-Step] Loading LLM from {lm_path}...", flush=True)
+            from acestep.llm_inference import LLMHandler
+            llm_handler = LLMHandler()
+            llm_handler.initialize(
+                checkpoint_dir=CHECKPOINT_DIR,
+                lm_model_path=LM_MODEL,
+                backend="pt",
+                device="cuda",
+            )
+            print(f"[ACE-Step] LLM loaded OK", flush=True)
+        else:
+            print(f"[ACE-Step] LM model not found at {lm_path}, skipping", flush=True)
+    except Exception as e:
+        print(f"[ACE-Step] LLM init ERROR (non-fatal): {e}", flush=True)
+        traceback.print_exc()
         llm_handler = None
-        print(f"[ACE-Step] LM model not found at {lm_path}, CoT disabled")
 
-    return llm_handler
+    available_loras = scan_available_loras()
+    print(f"[ACE-Step] Available LoRAs: {list(available_loras.keys()) if available_loras else 'none'}", flush=True)
 
-
-def load_default_models():
-    get_dit_handler(DEFAULT_DIT_MODEL)
-    get_llm_handler()
-    print(f"[ACE-Step] Available models: {[m for m in VALID_MODELS if os.path.exists(os.path.join(CHECKPOINT_DIR, m))]}")
+    elapsed = time.time() - start
+    print(f"[ACE-Step] Models loaded in {elapsed:.1f}s", flush=True)
+    models_loaded = True
+    return True
 
 
 def handler(job):
+    global dit_handler, llm_handler
+
     try:
+        if not ensure_models_loaded():
+            return {"error": "Failed to load models. Check worker logs."}
+
         job_input = job["input"]
 
-        from acestep.inference import GenerationParams, GenerationConfig, generate_music
+        if job_input.get("action") == "list_loras":
+            available = scan_available_loras()
+            return {
+                "loras": [
+                    {"name": name, "source": info["source"], "path": info["path"]}
+                    for name, info in available.items()
+                ],
+                "current_lora": current_lora,
+                "lora_dirs": {
+                    "builtin": LORA_DIR,
+                    "network_volume": NETWORK_VOLUME_LORA_DIR,
+                },
+            }
 
-        model_name = job_input.get("model", DEFAULT_DIT_MODEL)
-        if model_name not in VALID_MODELS:
-            return {"error": f"Invalid model '{model_name}'. Available: {list(VALID_MODELS)}"}
-
-        current_dit = get_dit_handler(model_name)
-        current_llm = get_llm_handler()
-
+        model_name = job_input.get("model", DEFAULT_MODEL)
         prompt = job_input.get("prompt", "")
         lyrics = job_input.get("lyrics", "")
         duration = float(job_input.get("audio_duration", job_input.get("duration", -1)))
@@ -144,7 +193,6 @@ def handler(job):
         guidance_scale = float(job_input.get("guidance_scale", 7.0))
         thinking = job_input.get("thinking", True)
         batch_size = int(job_input.get("batch_size", 1))
-
         bpm = job_input.get("bpm", None)
         if bpm is not None:
             bpm = int(bpm)
@@ -153,12 +201,18 @@ def handler(job):
         vocal_language = job_input.get("vocal_language", "unknown")
         instrumental = job_input.get("instrumental", False)
 
-        lm_temperature = float(job_input.get("lm_temperature", 0.85))
-        lm_cfg_scale = float(job_input.get("lm_cfg_scale", 2.0))
+        lora_name = job_input.get("lora_name", None)
+        lora_scale = float(job_input.get("lora_scale", 1.0))
 
+        if lora_name and lora_name != "none":
+            if not apply_lora(lora_name, lora_scale):
+                return {"error": f"Failed to load LoRA: {lora_name}. Available: {list(scan_available_loras().keys())}"}
+        elif current_lora and (not lora_name or lora_name == "none"):
+            apply_lora(None)
+
+        lora_info = f", lora={lora_name}(x{lora_scale})" if lora_name and lora_name != "none" else ""
         print(f"[ACE-Step] Job {job['id'][:12]}: model={model_name}, prompt='{prompt[:80]}', "
-              f"duration={duration}s, steps={inference_steps}, task={task_type}, "
-              f"thinking={thinking}, batch={batch_size}")
+              f"duration={duration}s, steps={inference_steps}{lora_info}", flush=True)
 
         params = GenerationParams(
             caption=prompt,
@@ -168,14 +222,12 @@ def handler(job):
             seed=seed,
             inference_steps=inference_steps,
             guidance_scale=guidance_scale,
-            thinking=thinking if current_llm is not None else False,
+            thinking=thinking if llm_handler is not None else False,
             bpm=bpm,
             keyscale=key_scale,
             timesignature=time_signature,
             vocal_language=vocal_language,
             instrumental=instrumental,
-            lm_temperature=lm_temperature,
-            lm_cfg_scale=lm_cfg_scale,
         )
 
         config = GenerationConfig(
@@ -185,88 +237,67 @@ def handler(job):
             audio_format=audio_format if audio_format in ("mp3", "wav", "flac") else "mp3",
         )
 
+        save_dir = tempfile.mkdtemp(prefix="ace_step_")
+
         start = time.time()
         result = generate_music(
-            dit_handler=current_dit,
-            llm_handler=current_llm,
+            dit_handler=dit_handler,
+            llm_handler=llm_handler,
             params=params,
             config=config,
+            save_dir=save_dir,
         )
         gen_time = time.time() - start
 
         if not result.success:
             return {"error": result.error or "Generation failed", "status_message": result.status_message}
 
-        print(f"[ACE-Step] Generation complete in {gen_time:.1f}s, {len(result.audios)} audio(s)")
+        print(f"[ACE-Step] Done in {gen_time:.1f}s, {len(result.audios)} audio(s)", flush=True)
 
-        content_type_map = {
-            "mp3": "audio/mpeg",
-            "wav": "audio/wav",
-            "flac": "audio/flac",
-            "opus": "audio/opus",
-            "aac": "audio/aac",
-        }
-
-        audios_output = []
         for i, audio_info in enumerate(result.audios):
-            audio_path = audio_info.get("path", audio_info.get("audio_path", ""))
+            audio_path = audio_info.get("path", "")
             if audio_path and os.path.exists(audio_path):
                 with open(audio_path, "rb") as f:
                     audio_bytes = f.read()
-            elif "audio" in audio_info and audio_info["audio"] is not None:
+                audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+                ext = os.path.splitext(audio_path)[1].lstrip(".") or audio_format
+                content_type_map = {"mp3": "audio/mpeg", "wav": "audio/wav", "flac": "audio/flac"}
+                return {
+                    "audio_base64": audio_b64,
+                    "content_type": content_type_map.get(ext, "audio/mpeg"),
+                    "filename": f"ace_step_{job['id'][:12]}_{i}.{ext}",
+                    "generation_time": round(gen_time, 1),
+                    "duration": duration,
+                    "sample_rate": 48000,
+                    "model": model_name,
+                    "lora": lora_name if lora_name and lora_name != "none" else None,
+                }
+            elif "tensor" in audio_info and audio_info["tensor"] is not None:
                 import torchaudio
-                tensor = audio_info["audio"]
-                sr = audio_info.get("sample_rate", 44100)
+                tensor = audio_info["tensor"]
+                sr = audio_info.get("sample_rate", 48000)
                 buf = io.BytesIO()
                 torchaudio.save(buf, tensor.cpu(), sr, format=audio_format)
-                audio_bytes = buf.getvalue()
-            else:
-                print(f"[ACE-Step] Skipping audio {i}: no path or tensor. Keys: {list(audio_info.keys())}")
-                continue
+                audio_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+                content_type_map = {"mp3": "audio/mpeg", "wav": "audio/wav", "flac": "audio/flac"}
+                return {
+                    "audio_base64": audio_b64,
+                    "content_type": content_type_map.get(audio_format, "audio/mpeg"),
+                    "filename": f"ace_step_{job['id'][:12]}_{i}.{audio_format}",
+                    "generation_time": round(gen_time, 1),
+                    "duration": duration,
+                    "sample_rate": sr,
+                    "model": model_name,
+                    "lora": lora_name if lora_name and lora_name != "none" else None,
+                }
 
-            audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-            ext = os.path.splitext(audio_path)[1].lstrip(".") if audio_path else audio_format
-
-            audios_output.append({
-                "audio_base64": audio_b64,
-                "content_type": content_type_map.get(ext, "audio/mpeg"),
-                "filename": f"ace_step_{job['id'][:12]}_{i}.{ext}",
-                "index": i,
-            })
-
-        if not audios_output:
-            return {"error": "No audio files generated"}
-
-        response = {
-            "audio_base64": audios_output[0]["audio_base64"],
-            "content_type": audios_output[0]["content_type"],
-            "filename": audios_output[0]["filename"],
-            "generation_time": round(gen_time, 1),
-            "duration": duration,
-            "sample_rate": 44100,
-            "status_message": result.status_message,
-        }
-
-        if len(audios_output) > 1:
-            response["batch_audios"] = audios_output
-
-        extra = result.extra_outputs or {}
-        if extra:
-            response["extra"] = {
-                k: v for k, v in extra.items()
-                if isinstance(v, (str, int, float, bool, list, dict, type(None)))
-            }
-
-        response["model"] = model_name
-
-        return response
+        return {"error": "No audio files generated"}
 
     except Exception as e:
+        print(f"[ACE-Step] Job error: {e}", flush=True)
         traceback.print_exc()
         return {"error": str(e), "traceback": traceback.format_exc()[-2000:]}
 
 
-print("[ACE-Step] Starting RunPod Serverless worker...")
-load_default_models()
-print("[ACE-Step] Worker ready, waiting for jobs...")
+print("[ACE-Step] Worker starting (models will load on first request)...", flush=True)
 runpod.serverless.start({"handler": handler})
