@@ -46,6 +46,13 @@ RUN python -c "from huggingface_hub import snapshot_download; \
 
 ENV ACESTEP_CHECKPOINT_DIR=/app/checkpoints
 
+RUN mkdir -p /app/loras && \
+    python -c "from huggingface_hub import snapshot_download; \
+    snapshot_download('ACE-Step/chinese-new-year', local_dir='/app/loras/chinese-new-year')"
+
+ENV ACESTEP_LORA_DIR=/app/loras
+ENV NETWORK_VOLUME_LORA_DIR=/runpod-volume/loras
+
 WORKDIR /app
 
 COPY handler.py /app/handler.py
