@@ -141,4 +141,108 @@ def handler(job):
         prompt = job_input.get("prompt", "")
         lyrics = job_input.get("lyrics", "")
         duration = float(job_input.get("audio_duration", job_input.get("duration", -1)))
-        task_
+        task_type = job_input.get("task_type", "text2music")
+        audio_format = job_input.get("audio_format", "mp3")
+        seed = int(job_input.get("seed", -1))
+        default_steps = DEFAULT_STEPS.get(model_name, 8)
+        inference_steps = int(job_input.get("inference_steps", job_input.get("infer_step", default_steps)))
+        guidance_scale = float(job_input.get("guidance_scale", 7.0))
+        thinking = job_input.get("thinking", True)
+        batch_size = int(job_input.get("batch_size", 1))
+        bpm = job_input.get("bpm", None)
+        if bpm is not None:
+            bpm = int(bpm)
+        key_scale = job_input.get("key_scale", job_input.get("keyscale", ""))
+        time_signature = job_input.get("time_signature", job_input.get("timesignature", ""))
+        vocal_language = job_input.get("vocal_language", "unknown")
+        instrumental = job_input.get("instrumental", False)
+
+        print(f"[ACE-Step] Job {job['id'][:12]}: model={model_name}, prompt='{prompt[:80]}', "
+              f"duration={duration}s, steps={inference_steps}", flush=True)
+
+        params = GenerationParams(
+            caption=prompt,
+            lyrics=lyrics,
+            duration=duration,
+            task_type=task_type,
+            seed=seed,
+            inference_steps=inference_steps,
+            guidance_scale=guidance_scale,
+            thinking=thinking if llm_handler is not None else False,
+            bpm=bpm,
+            keyscale=key_scale,
+            timesignature=time_signature,
+            vocal_language=vocal_language,
+            instrumental=instrumental,
+        )
+
+        config = GenerationConfig(
+            batch_size=batch_size,
+            use_random_seed=(seed < 0),
+            seeds=[seed] if seed >= 0 else None,
+            audio_format=audio_format if audio_format in ("mp3", "wav", "flac") else "mp3",
+        )
+
+        save_dir = tempfile.mkdtemp(prefix="ace_step_")
+
+        start = time.time()
+        result = generate_music(
+            dit_handler=dit_handler,
+            llm_handler=llm_handler,
+            params=params,
+            config=config,
+            save_dir=save_dir,
+        )
+        gen_time = time.time() - start
+
+        if not result.success:
+            return {"error": result.error or "Generation failed", "status_message": result.status_message}
+
+        print(f"[ACE-Step] Done in {gen_time:.1f}s, {len(result.audios)} audio(s)", flush=True)
+
+        for i, audio_info in enumerate(result.audios):
+            audio_path = audio_info.get("path", "")
+            if audio_path and os.path.exists(audio_path):
+                with open(audio_path, "rb") as f:
+                    audio_bytes = f.read()
+                audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+                ext = os.path.splitext(audio_path)[1].lstrip(".") or audio_format
+                content_type_map = {"mp3": "audio/mpeg", "wav": "audio/wav", "flac": "audio/flac"}
+                return {
+                    "audio_base64": audio_b64,
+                    "content_type": content_type_map.get(ext, "audio/mpeg"),
+                    "filename": f"ace_step_{job['id'][:12]}_{i}.{ext}",
+                    "generation_time": round(gen_time, 1),
+                    "duration": duration,
+                    "sample_rate": 48000,
+                    "model": model_name,
+                }
+            elif "tensor" in audio_info and audio_info["tensor"] is not None:
+                import torchaudio
+                tensor = audio_info["tensor"]
+                sr = audio_info.get("sample_rate", 48000)
+                buf = io.BytesIO()
+                torchaudio.save(buf, tensor.cpu(), sr, format=audio_format)
+                audio_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+                content_type_map = {"mp3": "audio/mpeg", "wav": "audio/wav", "flac": "audio/flac"}
+                return {
+                    "audio_base64": audio_b64,
+                    "content_type": content_type_map.get(audio_format, "audio/mpeg"),
+                    "filename": f"ace_step_{job['id'][:12]}_{i}.{audio_format}",
+                    "generation_time": round(gen_time, 1),
+                    "duration": duration,
+                    "sample_rate": sr,
+                    "model": model_name,
+                }
+
+        return {"error": "No audio files generated"}
+
+    except Exception as e:
+        traceback.print_exc()
+        return {"error": str(e), "traceback": traceback.format_exc()[-2000:]}
+
+
+print("[ACE-Step] Loading models...", flush=True)
+init_models()
+print("[ACE-Step] Worker ready!", flush=True)
+runpod.serverless.start({"handler": handler})
