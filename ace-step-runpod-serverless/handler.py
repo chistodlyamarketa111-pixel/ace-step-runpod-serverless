@@ -15,7 +15,7 @@ import tempfile
 
 import runpod
 
-PROJECT_ROOT = os.environ.get("ACESTEP_PROJECT_ROOT", "/app/ace-step")
+PROJECT_ROOT = os.environ.get("ACESTEP_PROJECT_ROOT", "/app")
 CHECKPOINT_DIR = os.environ.get("ACESTEP_CHECKPOINT_DIR", "/app/checkpoints")
 DEFAULT_DIT_MODEL = os.environ.get("ACESTEP_DIT_MODEL", "acestep-v15-turbo")
 LM_MODEL = os.environ.get("ACESTEP_LM_MODEL", "acestep-5Hz-lm-1.7B")
