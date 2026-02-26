@@ -31,6 +31,7 @@ dit_handler = None
 llm_handler = None
 models_loaded = False
 current_lora = None
+last_init_error = None
 
 DEFAULT_STEPS = {
     "acestep-v15-turbo": 8,
@@ -46,13 +47,20 @@ def _scan_lora_dir(directory, loras):
     for name in os.listdir(directory):
         lora_path = os.path.join(directory, name)
         if os.path.isdir(lora_path):
-            config_file = os.path.join(lora_path, "adapter_config.json")
-            safetensors = os.path.join(lora_path, "adapter_model.safetensors")
-            bin_file = os.path.join(lora_path, "adapter_model.bin")
-            if os.path.exists(config_file) and (os.path.exists(safetensors) or os.path.exists(bin_file)):
+            has_adapter = (
+                os.path.exists(os.path.join(lora_path, "adapter_config.json"))
+                or os.path.exists(os.path.join(lora_path, "lokr_weights.safetensors"))
+            )
+            has_weights = (
+                os.path.exists(os.path.join(lora_path, "adapter_model.safetensors"))
+                or os.path.exists(os.path.join(lora_path, "adapter_model.bin"))
+                or os.path.exists(os.path.join(lora_path, "lokr_weights.safetensors"))
+            )
+            if has_adapter and has_weights:
                 source = "volume" if directory == NETWORK_VOLUME_LORA_DIR else "builtin"
                 loras[name] = {"path": lora_path, "source": source}
-                print(f"[ACE-Step] Found LoRA: {name} -> {lora_path} ({source})", flush=True)
+                files = os.listdir(lora_path)
+                print(f"[ACE-Step] Found LoRA: {name} -> {lora_path} ({source}), files: {files}", flush=True)
 
 
 def scan_available_loras():
@@ -68,11 +76,12 @@ def apply_lora(lora_name, lora_scale=1.0):
     if not lora_name or lora_name == "none":
         if current_lora:
             try:
-                dit_handler.unload_lora()
-                print(f"[ACE-Step] Unloaded LoRA: {current_lora}", flush=True)
+                result = dit_handler.unload_lora()
+                print(f"[ACE-Step] Unloaded LoRA: {current_lora}, result: {result}", flush=True)
                 current_lora = None
             except Exception as e:
                 print(f"[ACE-Step] Error unloading LoRA: {e}", flush=True)
+                traceback.print_exc()
         return True
 
     if current_lora == lora_name:
@@ -86,19 +95,33 @@ def apply_lora(lora_name, lora_scale=1.0):
 
     try:
         if current_lora:
-            dit_handler.unload_lora()
-            print(f"[ACE-Step] Unloaded previous LoRA: {current_lora}", flush=True)
+            try:
+                dit_handler.unload_lora()
+                print(f"[ACE-Step] Unloaded previous LoRA: {current_lora}", flush=True)
+            except Exception as e:
+                print(f"[ACE-Step] Warning: unload_lora error: {e}", flush=True)
 
         lora_info = available[lora_name]
         lora_path = lora_info["path"]
         print(f"[ACE-Step] Loading LoRA: {lora_name} (scale={lora_scale}) from {lora_path} ({lora_info['source']})", flush=True)
+
         result = dit_handler.load_lora(lora_path)
         print(f"[ACE-Step] load_lora result: {result}", flush=True)
-        if isinstance(result, str) and result.startswith("❌"):
-            raise Exception(result)
-        if lora_scale != 1.0 and hasattr(dit_handler, 'set_lora_scale'):
-            dit_handler.set_lora_scale(lora_name, lora_scale)
+
+        if isinstance(result, str) and "❌" in result:
+            raise Exception(f"load_lora failed: {result}")
+
         dit_handler.use_lora = True
+
+        if lora_scale != 1.0:
+            adapter_name = getattr(dit_handler, '_lora_active_adapter', None) or lora_name
+            if hasattr(dit_handler, 'set_lora_scale'):
+                try:
+                    dit_handler.set_lora_scale(adapter_name, lora_scale)
+                    print(f"[ACE-Step] Set LoRA scale to {lora_scale} for adapter '{adapter_name}'", flush=True)
+                except Exception as e:
+                    print(f"[ACE-Step] Warning: set_lora_scale failed: {e}", flush=True)
+
         current_lora = lora_name
         print(f"[ACE-Step] LoRA loaded successfully: {lora_name}", flush=True)
         return True
@@ -109,59 +132,77 @@ def apply_lora(lora_name, lora_scale=1.0):
         return False
 
 
-init_error = None
-
 def ensure_models_loaded():
-    global dit_handler, llm_handler, models_loaded, init_error
+    global dit_handler, llm_handler, models_loaded, last_init_error
+
     if models_loaded:
         return True
-    if init_error:
-        return False
 
     print(f"[ACE-Step] Loading models (first request)...", flush=True)
+    print(f"[ACE-Step] Config: PROJECT_ROOT={PROJECT_ROOT}, CHECKPOINT_DIR={CHECKPOINT_DIR}, DEFAULT_MODEL={DEFAULT_MODEL}", flush=True)
     start = time.time()
+
+    checkpoint_model_dir = os.path.join(CHECKPOINT_DIR, DEFAULT_MODEL)
+    print(f"[ACE-Step] Expected model dir: {checkpoint_model_dir}, exists: {os.path.exists(checkpoint_model_dir)}", flush=True)
+    if os.path.exists(CHECKPOINT_DIR):
+        print(f"[ACE-Step] Checkpoint dir contents: {os.listdir(CHECKPOINT_DIR)}", flush=True)
+    if os.path.exists(checkpoint_model_dir):
+        print(f"[ACE-Step] Model dir contents: {os.listdir(checkpoint_model_dir)[:20]}", flush=True)
 
     try:
         print(f"[ACE-Step] Creating AceStepHandler...", flush=True)
         dit_handler = AceStepHandler()
         print(f"[ACE-Step] AceStepHandler created OK", flush=True)
 
-        print(f"[ACE-Step] Calling initialize_service(project_root={PROJECT_ROOT}, config_path={DEFAULT_MODEL})...", flush=True)
+        print(f"[ACE-Step] Calling initialize_service(project_root={PROJECT_ROOT}, config_path={DEFAULT_MODEL}, device=cuda)...", flush=True)
         result = dit_handler.initialize_service(
             project_root=PROJECT_ROOT,
             config_path=DEFAULT_MODEL,
             device="cuda",
         )
-        if isinstance(result, tuple):
-            status, success = result
-            print(f"[ACE-Step] initialize_service: success={success}, status={str(status)[:300]}", flush=True)
+
+        if isinstance(result, tuple) and len(result) == 2:
+            status_msg, success = result
+            print(f"[ACE-Step] initialize_service: success={success}", flush=True)
+            print(f"[ACE-Step] initialize_service status: {str(status_msg)[:500]}", flush=True)
             if not success:
-                init_error = f"initialize_service failed: {status}"
+                last_init_error = f"initialize_service failed: {str(status_msg)[:500]}"
+                print(f"[ACE-Step] FATAL: {last_init_error}", flush=True)
+                dit_handler = None
                 return False
         else:
-            print(f"[ACE-Step] initialize_service returned: {str(result)[:300]}", flush=True)
+            print(f"[ACE-Step] initialize_service returned unexpected type: {type(result)}: {str(result)[:300]}", flush=True)
     except Exception as e:
-        init_error = f"DiT init ERROR: {e}"
-        print(f"[ACE-Step] {init_error}", flush=True)
+        last_init_error = f"DiT init ERROR: {str(e)}"
+        print(f"[ACE-Step] {last_init_error}", flush=True)
         traceback.print_exc()
         dit_handler = None
         return False
 
     try:
         lm_path = os.path.join(CHECKPOINT_DIR, LM_MODEL)
+        print(f"[ACE-Step] LM model path: {lm_path}, exists: {os.path.exists(lm_path)}", flush=True)
         if os.path.exists(lm_path):
             print(f"[ACE-Step] Loading LLM from {lm_path}...", flush=True)
             from acestep.llm_inference import LLMHandler
             llm_handler = LLMHandler()
-            llm_handler.initialize(
+            llm_result = llm_handler.initialize(
                 checkpoint_dir=CHECKPOINT_DIR,
                 lm_model_path=LM_MODEL,
                 backend="pt",
                 device="cuda",
             )
-            print(f"[ACE-Step] LLM loaded OK", flush=True)
+            if isinstance(llm_result, tuple) and len(llm_result) == 2:
+                llm_status, llm_success = llm_result
+                print(f"[ACE-Step] LLM initialize: success={llm_success}, status={str(llm_status)[:200]}", flush=True)
+                if not llm_success:
+                    print(f"[ACE-Step] LLM init failed (non-fatal): {llm_status}", flush=True)
+                    llm_handler = None
+            else:
+                print(f"[ACE-Step] LLM initialize returned: {str(llm_result)[:200]}", flush=True)
         else:
             print(f"[ACE-Step] LM model not found at {lm_path}, skipping", flush=True)
+            llm_handler = None
     except Exception as e:
         print(f"[ACE-Step] LLM init ERROR (non-fatal): {e}", flush=True)
         traceback.print_exc()
@@ -170,9 +211,13 @@ def ensure_models_loaded():
     available_loras = scan_available_loras()
     print(f"[ACE-Step] Available LoRAs: {list(available_loras.keys()) if available_loras else 'none'}", flush=True)
 
+    if os.path.exists(LORA_DIR):
+        print(f"[ACE-Step] LoRA dir contents: {os.listdir(LORA_DIR)}", flush=True)
+
     elapsed = time.time() - start
-    print(f"[ACE-Step] Models loaded in {elapsed:.1f}s", flush=True)
+    print(f"[ACE-Step] Models loaded in {elapsed:.1f}s (LLM: {'yes' if llm_handler else 'no'})", flush=True)
     models_loaded = True
+    last_init_error = None
     return True
 
 
@@ -181,7 +226,7 @@ def handler(job):
 
     try:
         if not ensure_models_loaded():
-            return {"error": f"Failed to load models: {init_error or 'unknown error'}"}
+            return {"error": f"Failed to load models: {last_init_error or 'unknown error'}"}
 
         job_input = job["input"]
 
@@ -207,7 +252,7 @@ def handler(job):
         audio_format = job_input.get("audio_format", "mp3")
         seed = int(job_input.get("seed", -1))
         default_steps = DEFAULT_STEPS.get(model_name, 8)
-        inference_steps = int(job_input.get("inference_steps", job_input.get("infer_step", default_steps)))
+        inference_steps = int(job_input.get("inference_steps", job_input.get("infer_step", job_input.get("num_inference_steps", default_steps))))
         guidance_scale = float(job_input.get("guidance_scale", 7.0))
         thinking = job_input.get("thinking", True)
         batch_size = int(job_input.get("batch_size", 1))
@@ -227,6 +272,25 @@ def handler(job):
                 return {"error": f"Failed to load LoRA: {lora_name}. Available: {list(scan_available_loras().keys())}"}
         elif current_lora and (not lora_name or lora_name == "none"):
             apply_lora(None)
+
+        if model_name != DEFAULT_MODEL:
+            model_dir = os.path.join(CHECKPOINT_DIR, model_name)
+            if os.path.exists(model_dir):
+                print(f"[ACE-Step] Switching model to {model_name}...", flush=True)
+                try:
+                    result = dit_handler.initialize_service(
+                        project_root=PROJECT_ROOT,
+                        config_path=model_name,
+                        device="cuda",
+                    )
+                    if isinstance(result, tuple) and len(result) == 2:
+                        _, success = result
+                        if not success:
+                            print(f"[ACE-Step] Model switch failed, using {DEFAULT_MODEL}", flush=True)
+                            model_name = DEFAULT_MODEL
+                except Exception as e:
+                    print(f"[ACE-Step] Model switch error: {e}", flush=True)
+                    model_name = DEFAULT_MODEL
 
         lora_info = f", lora={lora_name}(x{lora_scale})" if lora_name and lora_name != "none" else ""
         print(f"[ACE-Step] Job {job['id'][:12]}: model={model_name}, prompt='{prompt[:80]}', "
@@ -286,11 +350,11 @@ def handler(job):
                     "filename": f"ace_step_{job['id'][:12]}_{i}.{ext}",
                     "generation_time": round(gen_time, 1),
                     "duration": duration,
-                    "sample_rate": 48000,
+                    "sample_rate": audio_info.get("sample_rate", 48000),
                     "model": model_name,
                     "lora": lora_name if lora_name and lora_name != "none" else None,
                 }
-            elif "tensor" in audio_info and audio_info["tensor"] is not None:
+            elif audio_info.get("tensor") is not None:
                 import torchaudio
                 tensor = audio_info["tensor"]
                 sr = audio_info.get("sample_rate", 48000)
