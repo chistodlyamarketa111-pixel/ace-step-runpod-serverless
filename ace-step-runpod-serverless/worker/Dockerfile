@@ -46,9 +46,13 @@ RUN python -c "from huggingface_hub import snapshot_download; \
 
 ENV ACESTEP_CHECKPOINT_DIR=/app/checkpoints
 
+ENV HF_HUB_ENABLE_HF_TRANSFER=0
+
 RUN mkdir -p /app/loras && \
     python -c "from huggingface_hub import snapshot_download; \
-    snapshot_download('ACE-Step/chinese-new-year', local_dir='/app/loras/chinese-new-year'); \
+    snapshot_download('ACE-Step/chinese-new-year', local_dir='/app/loras/chinese-new-year')"
+
+RUN python -c "from huggingface_hub import snapshot_download; \
     snapshot_download('ruslanmusinrusmus/russian-pop-v1', local_dir='/app/loras/russian-pop-v1')"
 
 ENV ACESTEP_LORA_DIR=/app/loras
@@ -60,5 +64,3 @@ COPY handler.py /app/handler.py
 COPY test_input.json /app/test_input.json
 
 CMD ["python", "-u", "/app/handler.py"]
-
-# russian-pop-v1 LoRA included
