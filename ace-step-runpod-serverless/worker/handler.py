@@ -92,7 +92,13 @@ def apply_lora(lora_name, lora_scale=1.0):
         lora_info = available[lora_name]
         lora_path = lora_info["path"]
         print(f"[ACE-Step] Loading LoRA: {lora_name} (scale={lora_scale}) from {lora_path} ({lora_info['source']})", flush=True)
-        dit_handler.load_lora(lora_path=lora_path, lora_scale=lora_scale)
+        result = dit_handler.load_lora(lora_path)
+        print(f"[ACE-Step] load_lora result: {result}", flush=True)
+        if isinstance(result, str) and result.startswith("❌"):
+            raise Exception(result)
+        if lora_scale != 1.0 and hasattr(dit_handler, 'set_lora_scale'):
+            dit_handler.set_lora_scale(lora_name, lora_scale)
+        dit_handler.use_lora = True
         current_lora = lora_name
         print(f"[ACE-Step] LoRA loaded successfully: {lora_name}", flush=True)
         return True
