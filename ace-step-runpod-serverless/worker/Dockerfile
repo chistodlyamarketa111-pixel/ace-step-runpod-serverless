@@ -60,3 +60,5 @@ COPY handler.py /app/handler.py
 COPY test_input.json /app/test_input.json
 
 CMD ["python", "-u", "/app/handler.py"]
+
+# russian-pop-v1 LoRA included
