@@ -15,6 +15,23 @@ import tempfile
 
 print("[ACE-Step] Handler starting (lazy loading mode)...", flush=True)
 
+# Fix flash-attn ABI crash: the base runpod/pytorch image ships flash_attn
+# compiled against a different PyTorch version, causing "undefined symbol" errors
+# when diffusers tries to import it. We block it entirely before any imports.
+import types as _types
+_fake_flash = _types.ModuleType("flash_attn")
+_fake_flash.__path__ = []
+_fake_flash.__file__ = ""
+_fake_flash.__version__ = "0.0.0"
+for _name in [
+    "flash_attn", "flash_attn.flash_attn_interface",
+    "flash_attn.bert_padding", "flash_attn.flash_attn_triton",
+    "flash_attn_2_cuda", "flash_attn.flash_attn_2_cuda",
+]:
+    sys.modules[_name] = _fake_flash
+os.environ["ATTN_BACKEND"] = "sdpa"
+print("[ACE-Step] flash_attn blocked (ABI workaround)", flush=True)
+
 import runpod
 import torch
 from acestep.handler import AceStepHandler
