@@ -35,6 +35,8 @@ RUN uv pip install --system --no-cache-dir ./acestep/third_parts/nano-vllm || tr
 
 RUN uv pip install --system --no-cache-dir --no-deps -e /app/ace-step
 
+RUN pip uninstall -y flash-attn || true
+
 RUN pip install --no-cache-dir "runpod>=1.8.0"
 
 RUN python -c "from huggingface_hub import snapshot_download; snapshot_download('ACE-Step/Ace-Step1.5', local_dir='/app/checkpoints')"
