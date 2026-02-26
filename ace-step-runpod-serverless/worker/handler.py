@@ -109,10 +109,14 @@ def apply_lora(lora_name, lora_scale=1.0):
         return False
 
 
+init_error = None
+
 def ensure_models_loaded():
-    global dit_handler, llm_handler, models_loaded
+    global dit_handler, llm_handler, models_loaded, init_error
     if models_loaded:
         return True
+    if init_error:
+        return False
 
     print(f"[ACE-Step] Loading models (first request)...", flush=True)
     start = time.time()
@@ -123,14 +127,22 @@ def ensure_models_loaded():
         print(f"[ACE-Step] AceStepHandler created OK", flush=True)
 
         print(f"[ACE-Step] Calling initialize_service(project_root={PROJECT_ROOT}, config_path={DEFAULT_MODEL})...", flush=True)
-        status, success = dit_handler.initialize_service(
+        result = dit_handler.initialize_service(
             project_root=PROJECT_ROOT,
             config_path=DEFAULT_MODEL,
             device="cuda",
         )
-        print(f"[ACE-Step] initialize_service: success={success}, status={status[:300]}", flush=True)
+        if isinstance(result, tuple):
+            status, success = result
+            print(f"[ACE-Step] initialize_service: success={success}, status={str(status)[:300]}", flush=True)
+            if not success:
+                init_error = f"initialize_service failed: {status}"
+                return False
+        else:
+            print(f"[ACE-Step] initialize_service returned: {str(result)[:300]}", flush=True)
     except Exception as e:
-        print(f"[ACE-Step] DiT init ERROR: {e}", flush=True)
+        init_error = f"DiT init ERROR: {e}"
+        print(f"[ACE-Step] {init_error}", flush=True)
         traceback.print_exc()
         dit_handler = None
         return False
@@ -169,7 +181,7 @@ def handler(job):
 
     try:
         if not ensure_models_loaded():
-            return {"error": "Failed to load models. Check worker logs."}
+            return {"error": f"Failed to load models: {init_error or 'unknown error'}"}
 
         job_input = job["input"]
 
