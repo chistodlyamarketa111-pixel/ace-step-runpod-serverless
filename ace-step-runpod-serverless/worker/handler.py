@@ -111,8 +111,6 @@ def apply_lora(lora_name, lora_scale=1.0):
         if isinstance(result, str) and "❌" in result:
             raise Exception(f"load_lora failed: {result}")
 
-        dit_handler.use_lora = True
-
         if lora_scale != 1.0:
             adapter_name = getattr(dit_handler, '_lora_active_adapter', None) or lora_name
             if hasattr(dit_handler, 'set_lora_scale'):
