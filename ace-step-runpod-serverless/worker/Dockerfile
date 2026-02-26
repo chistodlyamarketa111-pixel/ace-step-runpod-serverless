@@ -46,17 +46,8 @@ RUN python -c "from huggingface_hub import snapshot_download; \
 
 ENV ACESTEP_CHECKPOINT_DIR=/app/checkpoints
 
-RUN mkdir -p /app/loras/chinese-new-year /app/loras/russian-pop-v1
-
-RUN python -c "\
-import urllib.request, os; \
-files = [ \
-    ('https://huggingface.co/ACE-Step/chinese-new-year/resolve/main/adapter_config.json', '/app/loras/chinese-new-year/adapter_config.json'), \
-    ('https://huggingface.co/ACE-Step/chinese-new-year/resolve/main/adapter_model.safetensors', '/app/loras/chinese-new-year/adapter_model.safetensors'), \
-    ('https://huggingface.co/ruslanmusinrusmus/russian-pop-v1/resolve/main/adapter_config.json', '/app/loras/russian-pop-v1/adapter_config.json'), \
-    ('https://huggingface.co/ruslanmusinrusmus/russian-pop-v1/resolve/main/adapter_model.safetensors', '/app/loras/russian-pop-v1/adapter_model.safetensors'), \
-]; \
-[print(f'Downloading {u} -> {p} ({os.path.getsize(p)} bytes)') for u, p in files if not urllib.request.urlretrieve(u, p)]"
+COPY download_loras.py /tmp/download_loras.py
+RUN python /tmp/download_loras.py && rm /tmp/download_loras.py
 
 ENV ACESTEP_LORA_DIR=/app/loras
 ENV NETWORK_VOLUME_LORA_DIR=/runpod-volume/loras
