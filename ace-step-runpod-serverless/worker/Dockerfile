@@ -46,14 +46,17 @@ RUN python -c "from huggingface_hub import snapshot_download; \
 
 ENV ACESTEP_CHECKPOINT_DIR=/app/checkpoints
 
-ENV HF_HUB_ENABLE_HF_TRANSFER=0
+RUN mkdir -p /app/loras/chinese-new-year /app/loras/russian-pop-v1
 
-RUN mkdir -p /app/loras && \
-    python -c "from huggingface_hub import snapshot_download; \
-    snapshot_download('ACE-Step/chinese-new-year', local_dir='/app/loras/chinese-new-year')"
+RUN curl -sL -o /app/loras/chinese-new-year/adapter_config.json \
+    https://huggingface.co/ACE-Step/chinese-new-year/resolve/main/adapter_config.json && \
+    curl -sL -o /app/loras/chinese-new-year/adapter_model.safetensors \
+    https://huggingface.co/ACE-Step/chinese-new-year/resolve/main/adapter_model.safetensors
 
-RUN python -c "from huggingface_hub import snapshot_download; \
-    snapshot_download('ruslanmusinrusmus/russian-pop-v1', local_dir='/app/loras/russian-pop-v1')"
+RUN curl -sL -o /app/loras/russian-pop-v1/adapter_config.json \
+    https://huggingface.co/ruslanmusinrusmus/russian-pop-v1/resolve/main/adapter_config.json && \
+    curl -sL -o /app/loras/russian-pop-v1/adapter_model.safetensors \
+    https://huggingface.co/ruslanmusinrusmus/russian-pop-v1/resolve/main/adapter_model.safetensors
 
 ENV ACESTEP_LORA_DIR=/app/loras
 ENV NETWORK_VOLUME_LORA_DIR=/runpod-volume/loras
