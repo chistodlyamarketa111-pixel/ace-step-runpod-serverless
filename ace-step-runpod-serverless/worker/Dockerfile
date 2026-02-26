@@ -47,7 +47,8 @@ RUN python -c "from huggingface_hub import snapshot_download; \
 ENV ACESTEP_CHECKPOINT_DIR=/app/checkpoints
 
 COPY download_loras.py /tmp/download_loras.py
-RUN python /tmp/download_loras.py && rm /tmp/download_loras.py
+RUN python /tmp/download_loras.py
+RUN rm /tmp/download_loras.py
 
 ENV ACESTEP_LORA_DIR=/app/loras
 ENV NETWORK_VOLUME_LORA_DIR=/runpod-volume/loras
