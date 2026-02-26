@@ -17,28 +17,31 @@ print("[ACE-Step] Handler starting (lazy loading mode)...", flush=True)
 
 # Fix flash-attn ABI crash: the base runpod/pytorch image ships flash_attn
 # compiled against a different PyTorch version, causing "undefined symbol" errors.
-# Strategy: physically remove/rename the broken .so files so flash_attn raises
-# a clean ImportError that diffusers handles gracefully (falls back to SDPA).
+# Strategy: rename the entire flash_attn package directory so importlib.util.find_spec
+# returns None, making diffusers set _flash_attn_available=False and use SDPA instead.
 import glob as _glob
-_killed = []
+import shutil as _shutil
+_disabled = []
 for _pattern in [
-    "/usr/local/lib/python*/dist-packages/flash_attn*cuda*.so",
-    "/usr/local/lib/python*/dist-packages/flash_attn/*.so",
-    "/usr/local/lib/python*/dist-packages/flash_attn/**/*.so",
+    "/usr/local/lib/python*/dist-packages/flash_attn",
+    "/usr/local/lib/python*/dist-packages/flash_attn_2_cuda*",
 ]:
-    for _so in _glob.glob(_pattern, recursive=True):
+    for _path in _glob.glob(_pattern):
         try:
-            os.rename(_so, _so + ".disabled")
-            _killed.append(_so)
-        except Exception:
-            pass
-if _killed:
-    print(f"[ACE-Step] Disabled {len(_killed)} flash_attn .so files to prevent ABI crash", flush=True)
+            target = _path + ".disabled"
+            if not os.path.exists(target):
+                os.rename(_path, target)
+                _disabled.append(_path)
+        except Exception as _e:
+            print(f"[ACE-Step] Warning: could not disable {_path}: {_e}", flush=True)
 for _k in list(sys.modules.keys()):
     if "flash_attn" in _k:
         del sys.modules[_k]
 os.environ["ATTN_BACKEND"] = "sdpa"
-print("[ACE-Step] flash_attn workaround applied", flush=True)
+if _disabled:
+    print(f"[ACE-Step] Disabled flash_attn ({len(_disabled)} items) to prevent ABI crash", flush=True)
+else:
+    print("[ACE-Step] flash_attn not found (already removed or not installed)", flush=True)
 
 import runpod
 import torch
