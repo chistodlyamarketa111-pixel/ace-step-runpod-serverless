@@ -15,34 +15,6 @@ import tempfile
 
 print("[ACE-Step] Handler starting (lazy loading mode)...", flush=True)
 
-# Fix flash-attn ABI crash: the base runpod/pytorch image ships flash_attn
-# compiled against a different PyTorch version, causing "undefined symbol" errors.
-# Strategy: rename the entire flash_attn package directory so importlib.util.find_spec
-# returns None, making diffusers set _flash_attn_available=False and use SDPA instead.
-import glob as _glob
-import shutil as _shutil
-_disabled = []
-for _pattern in [
-    "/usr/local/lib/python*/dist-packages/flash_attn",
-    "/usr/local/lib/python*/dist-packages/flash_attn_2_cuda*",
-]:
-    for _path in _glob.glob(_pattern):
-        try:
-            target = _path + ".disabled"
-            if not os.path.exists(target):
-                os.rename(_path, target)
-                _disabled.append(_path)
-        except Exception as _e:
-            print(f"[ACE-Step] Warning: could not disable {_path}: {_e}", flush=True)
-for _k in list(sys.modules.keys()):
-    if "flash_attn" in _k:
-        del sys.modules[_k]
-os.environ["ATTN_BACKEND"] = "sdpa"
-if _disabled:
-    print(f"[ACE-Step] Disabled flash_attn ({len(_disabled)} items) to prevent ABI crash", flush=True)
-else:
-    print("[ACE-Step] flash_attn not found (already removed or not installed)", flush=True)
-
 import runpod
 import torch
 from acestep.handler import AceStepHandler

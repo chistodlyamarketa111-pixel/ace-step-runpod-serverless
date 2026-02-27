@@ -1,4 +1,4 @@
-FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -7,9 +7,14 @@ ENV ACESTEP_DOWNLOAD_SOURCE=huggingface
 ENV HF_HOME=/workspace/hf_cache
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    libsndfile1 \
+    python3.11 python3.11-dev python3.11-venv python3-pip \
+    ffmpeg libsndfile1 git curl \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python \
+    && python3 -m pip install --upgrade pip \
     && rm -rf /var/lib/apt/lists/*
+
+RUN pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 
 RUN pip install uv
 
@@ -28,14 +33,13 @@ RUN uv pip install --system --no-cache-dir \
     "numba" \
     "vector-quantize-pytorch>=1.27.15" \
     "peft>=0.18.0" \
+    "lycoris-lora" \
     toml \
     huggingface_hub
 
 RUN uv pip install --system --no-cache-dir ./acestep/third_parts/nano-vllm || true
 
 RUN uv pip install --system --no-cache-dir --no-deps -e /app/ace-step
-
-RUN pip uninstall -y flash-attn || true
 
 RUN pip install --no-cache-dir "runpod>=1.8.0"
 
