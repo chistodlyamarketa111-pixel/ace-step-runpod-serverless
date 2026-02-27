@@ -43,6 +43,10 @@ RUN uv pip install --system --no-cache-dir --no-deps -e /app/ace-step
 
 RUN pip install --no-cache-dir "runpod>=1.8.0"
 
+RUN pip uninstall -y flash-attn flash_attn 2>/dev/null; \
+    find /usr/local/lib/python3.11/dist-packages -name "flash_attn*" -exec rm -rf {} + 2>/dev/null; \
+    echo "flash_attn removed"
+
 RUN python -c "from huggingface_hub import snapshot_download; snapshot_download('ACE-Step/Ace-Step1.5', local_dir='/app/checkpoints')"
 
 RUN python -c "from huggingface_hub import snapshot_download; \
