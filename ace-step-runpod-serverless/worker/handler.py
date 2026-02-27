@@ -99,6 +99,7 @@ def scan_available_loras():
 
 
 def apply_lora(lora_name, lora_scale=1.0):
+    """Load/unload LoRA adapter. Returns (True, None) on success, (False, error_msg) on failure."""
     global dit_handler, current_lora
 
     if not lora_name or lora_name == "none":
@@ -110,16 +111,17 @@ def apply_lora(lora_name, lora_scale=1.0):
             except Exception as e:
                 print(f"[ACE-Step] Error unloading LoRA: {e}", flush=True)
                 traceback.print_exc()
-        return True
+        return True, None
 
     if current_lora == lora_name:
         print(f"[ACE-Step] LoRA already loaded: {lora_name}", flush=True)
-        return True
+        return True, None
 
     available = scan_available_loras()
     if lora_name not in available:
-        print(f"[ACE-Step] LoRA not found: {lora_name}. Available: {list(available.keys())}", flush=True)
-        return False
+        msg = f"LoRA not found: {lora_name}. Available: {list(available.keys())}"
+        print(f"[ACE-Step] {msg}", flush=True)
+        return False, msg
 
     try:
         if current_lora:
@@ -132,12 +134,13 @@ def apply_lora(lora_name, lora_scale=1.0):
         lora_info = available[lora_name]
         lora_path = lora_info["path"]
         print(f"[ACE-Step] Loading LoRA: {lora_name} (scale={lora_scale}) from {lora_path} ({lora_info['source']})", flush=True)
+        print(f"[ACE-Step] LoRA dir contents: {os.listdir(lora_path)}", flush=True)
 
         result = dit_handler.load_lora(lora_path)
         print(f"[ACE-Step] load_lora result: {result}", flush=True)
 
         if isinstance(result, str) and "❌" in result:
-            raise Exception(f"load_lora failed: {result}")
+            return False, f"load_lora returned: {result}"
 
         if lora_scale != 1.0:
             adapter_name = getattr(dit_handler, '_lora_active_adapter', None) or lora_name
@@ -150,12 +153,12 @@ def apply_lora(lora_name, lora_scale=1.0):
 
         current_lora = lora_name
         print(f"[ACE-Step] LoRA loaded successfully: {lora_name}", flush=True)
-        return True
+        return True, None
     except Exception as e:
-        print(f"[ACE-Step] Error loading LoRA {lora_name}: {e}", flush=True)
-        traceback.print_exc()
+        msg = f"Error loading LoRA {lora_name}: {e}\n{traceback.format_exc()[-1000:]}"
+        print(f"[ACE-Step] {msg}", flush=True)
         current_lora = None
-        return False
+        return False, msg
 
 
 def ensure_models_loaded():
@@ -293,13 +296,9 @@ def handler(job):
         lora_name = job_input.get("lora_name", None)
         lora_scale = float(job_input.get("lora_scale", 1.0))
 
-        if lora_name and lora_name != "none":
-            if not apply_lora(lora_name, lora_scale):
-                return {"error": f"Failed to load LoRA: {lora_name}. Available: {list(scan_available_loras().keys())}"}
-        elif current_lora and (not lora_name or lora_name == "none"):
-            apply_lora(None)
-
         if model_name != DEFAULT_MODEL:
+            if current_lora:
+                apply_lora(None)
             model_dir = os.path.join(CHECKPOINT_DIR, model_name)
             if os.path.exists(model_dir):
                 print(f"[ACE-Step] Switching model to {model_name}...", flush=True)
@@ -317,6 +316,13 @@ def handler(job):
                 except Exception as e:
                     print(f"[ACE-Step] Model switch error: {e}", flush=True)
                     model_name = DEFAULT_MODEL
+
+        if lora_name and lora_name != "none":
+            ok, err = apply_lora(lora_name, lora_scale)
+            if not ok:
+                return {"error": f"Failed to load LoRA: {err}"}
+        elif current_lora and (not lora_name or lora_name == "none"):
+            apply_lora(None)
 
         lora_info = f", lora={lora_name}(x{lora_scale})" if lora_name and lora_name != "none" else ""
         print(f"[ACE-Step] Job {job['id'][:12]}: model={model_name}, prompt='{prompt[:80]}', "
