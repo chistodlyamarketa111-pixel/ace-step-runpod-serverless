@@ -245,6 +245,21 @@ def handler(job):
                 },
             }
 
+        if job_input.get("action") == "debug_model":
+            decoder = dit_handler.model.decoder if dit_handler.model else None
+            module_names = []
+            if decoder:
+                for name, _ in decoder.named_modules():
+                    module_names.append(name)
+            attn_modules = [n for n in module_names if any(k in n for k in ["to_k", "to_q", "to_v", "to_out", "attn", "qkv", "proj"])]
+            return {
+                "decoder_type": str(type(decoder)) if decoder else None,
+                "total_modules": len(module_names),
+                "attn_modules_sample": attn_modules[:50],
+                "all_leaf_names": list(set(n.split(".")[-1] for n in module_names if n))[:100],
+                "pytorch_version": torch.__version__,
+            }
+
         model_name = job_input.get("model", DEFAULT_MODEL)
         prompt = job_input.get("prompt", "")
         lyrics = job_input.get("lyrics", "")
