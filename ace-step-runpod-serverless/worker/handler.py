@@ -258,6 +258,7 @@ def handler(job):
                 "attn_modules_sample": attn_modules[:50],
                 "all_leaf_names": list(set(n.split(".")[-1] for n in module_names if n))[:100],
                 "pytorch_version": torch.__version__,
+                "lora_methods": [m for m in dir(dit_handler) if "lora" in m.lower()],
             }
 
         model_name = job_input.get("model", DEFAULT_MODEL)
