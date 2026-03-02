@@ -81,6 +81,71 @@ HF_LORA_REGISTRY = {
         "config": "adapter_config.json",
         "weights": "pytorch_lora_weights.safetensors",
     },
+    "russianpop": {
+        "repo": "ruslanmusinrusmus/russian-pop-v2",
+        "config": "adapter_config.json",
+        "weights": "pytorch_lora_weights.safetensors",
+    },
+    "russianrap": {
+        "repo": "ruslanmusinrusmus/russianrap",
+        "config": "adapter_config.json",
+        "weights": "pytorch_lora_weights.safetensors",
+    },
+    "russiandisco": {
+        "repo": "ruslanmusinrusmus/russiandisco",
+        "config": "adapter_config.json",
+        "weights": "pytorch_lora_weights.safetensors",
+    },
+    "russianshanson": {
+        "repo": "ruslanmusinrusmus/russianshanson",
+        "config": "adapter_config.json",
+        "weights": "pytorch_lora_weights.safetensors",
+    },
+    "russianrock": {
+        "repo": "ruslanmusinrusmus/russianrock",
+        "config": "adapter_config.json",
+        "weights": "pytorch_lora_weights.safetensors",
+    },
+    "russianclassical": {
+        "repo": "ruslanmusinrusmus/russianclassical",
+        "config": "adapter_config.json",
+        "weights": "pytorch_lora_weights.safetensors",
+    },
+    "russianelectro": {
+        "repo": "ruslanmusinrusmus/russianelectro",
+        "config": "adapter_config.json",
+        "weights": "pytorch_lora_weights.safetensors",
+    },
+    "russianjazz": {
+        "repo": "ruslanmusinrusmus/russianjazz",
+        "config": "adapter_config.json",
+        "weights": "pytorch_lora_weights.safetensors",
+    },
+    "russianfolk": {
+        "repo": "ruslanmusinrusmus/russianfolk",
+        "config": "adapter_config.json",
+        "weights": "pytorch_lora_weights.safetensors",
+    },
+    "russianacoustic": {
+        "repo": "ruslanmusinrusmus/russianacoustic",
+        "config": "adapter_config.json",
+        "weights": "pytorch_lora_weights.safetensors",
+    },
+    "russianphonk": {
+        "repo": "ruslanmusinrusmus/russianphonk",
+        "config": "adapter_config.json",
+        "weights": "pytorch_lora_weights.safetensors",
+    },
+    "russianrnb": {
+        "repo": "ruslanmusinrusmus/russianrnb",
+        "config": "adapter_config.json",
+        "weights": "pytorch_lora_weights.safetensors",
+    },
+    "russianballad": {
+        "repo": "ruslanmusinrusmus/russianballad",
+        "config": "adapter_config.json",
+        "weights": "pytorch_lora_weights.safetensors",
+    },
 }
 
 MODULE_RENAME = {
