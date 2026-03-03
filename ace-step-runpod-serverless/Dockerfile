@@ -41,7 +41,8 @@ RUN uv pip install --system --no-cache-dir \
     toml \
     huggingface_hub \
     torch \
-    torchaudio
+    torchaudio \
+    demucs
 
 RUN uv pip install --system --no-cache-dir ./acestep/third_parts/nano-vllm || true
 
@@ -57,6 +58,12 @@ RUN python -c "from huggingface_hub import snapshot_download; \
     snapshot_download('ACE-Step/acestep-v15-turbo-shift3', local_dir='/app/checkpoints/acestep-v15-turbo-shift3')"
 
 ENV ACESTEP_CHECKPOINT_DIR=/app/checkpoints
+ENV ACESTEP_LORA_DIR=/app/loras
+
+RUN mkdir -p /app/loras
+
+RUN python -c "from huggingface_hub import snapshot_download; \
+    snapshot_download('ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA', local_dir='/app/loras/chinese-new-year')" || true
 
 WORKDIR /app
 
