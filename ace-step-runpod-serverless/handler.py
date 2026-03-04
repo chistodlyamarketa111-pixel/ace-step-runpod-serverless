@@ -120,13 +120,40 @@ def apply_lora(lora_name, lora_scale=1.0):
 
     try:
         if current_lora:
-            dit_handler.unload_lora()
+            try:
+                dit_handler.unload_lora()
+            except Exception:
+                import peft
+                model = dit_handler.dit.model if hasattr(dit_handler.dit, 'model') else dit_handler.dit
+                if hasattr(model, 'disable_adapters'):
+                    model.disable_adapters()
+                if hasattr(model, 'delete_adapter'):
+                    model.delete_adapter('default')
             print(f"[ACE-Step] Unloaded previous LoRA: {current_lora}", flush=True)
 
         lora_info = available[lora_name]
         lora_path = lora_info["path"]
         print(f"[ACE-Step] Loading LoRA: {lora_name} (scale={lora_scale}) from {lora_path} ({lora_info['source']})", flush=True)
-        dit_handler.load_lora(lora_path=lora_path, lora_scale=lora_scale)
+
+        import json as _json
+        config_path = os.path.join(lora_path, "adapter_config.json")
+        peft_type = "LORA"
+        if os.path.exists(config_path):
+            with open(config_path) as f:
+                cfg = _json.load(f)
+                peft_type = cfg.get("peft_type", "LORA")
+            print(f"[ACE-Step] Adapter type: {peft_type}", flush=True)
+
+        if peft_type in ("LOKR", "LOHA", "IA3", "OFT"):
+            from peft import PeftModel
+            model = dit_handler.dit.model if hasattr(dit_handler.dit, 'model') else dit_handler.dit
+            dit_handler.dit = PeftModel.from_pretrained(model, lora_path, adapter_name="default")
+            if hasattr(dit_handler.dit, 'set_adapter'):
+                dit_handler.dit.set_adapter("default")
+            print(f"[ACE-Step] Loaded {peft_type} adapter via PeftModel", flush=True)
+        else:
+            dit_handler.load_lora(lora_path=lora_path, lora_scale=lora_scale)
+
         current_lora = lora_name
         print(f"[ACE-Step] LoRA loaded successfully: {lora_name}", flush=True)
         return True
