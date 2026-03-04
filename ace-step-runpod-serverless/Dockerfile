@@ -63,7 +63,7 @@ ENV ACESTEP_LORA_DIR=/app/loras
 RUN mkdir -p /app/loras
 
 RUN python -c "from huggingface_hub import snapshot_download; \
-    snapshot_download('ACE-Step/ACE-Step-v1.5-chinese-new-year-LoRA', local_dir='/app/loras/chinese-new-year')" || true
+    snapshot_download('ruslanmusinrusmus/russianpop', local_dir='/app/loras/russianpop')" || true
 
 WORKDIR /app
 
