@@ -147,14 +147,49 @@ def apply_lora(lora_name, lora_scale=1.0):
             print(f"[ACE-Step] Adapter type: {peft_type}", flush=True)
 
         if peft_type in ("LOKR", "LOHA", "IA3", "OFT"):
-            from peft import PeftModel, set_peft_model_state_dict
+            import peft
+            from peft import PeftModel, get_peft_model, LoKrConfig
+            from safetensors.torch import load_file as safe_load
+            import json as _json2
+
             transformer = dit_handler.ace_step_transformer
-            base_model = transformer.model if hasattr(transformer, 'model') else transformer
-            wrapped = PeftModel.from_pretrained(base_model, lora_path, adapter_name="default")
-            if hasattr(wrapped, 'set_adapter'):
-                wrapped.set_adapter("default")
-            dit_handler.ace_step_transformer = wrapped
-            print(f"[ACE-Step] Loaded {peft_type} adapter via PeftModel on ace_step_transformer", flush=True)
+            print(f"[ACE-Step] Transformer type: {type(transformer)}", flush=True)
+            print(f"[ACE-Step] Transformer attrs: {[a for a in dir(transformer) if not a.startswith('_')][:30]}", flush=True)
+
+            adapter_config_path = os.path.join(lora_path, "adapter_config.json")
+            adapter_model_path = os.path.join(lora_path, "adapter_model.safetensors")
+
+            with open(adapter_config_path) as f:
+                adapter_cfg = _json2.load(f)
+            print(f"[ACE-Step] Adapter config: {adapter_cfg}", flush=True)
+
+            try:
+                wrapped = PeftModel.from_pretrained(transformer, lora_path, adapter_name="default")
+                if hasattr(wrapped, 'set_adapter'):
+                    wrapped.set_adapter("default")
+                dit_handler.ace_step_transformer = wrapped
+                print(f"[ACE-Step] Loaded {peft_type} adapter via PeftModel.from_pretrained", flush=True)
+            except Exception as e1:
+                print(f"[ACE-Step] PeftModel.from_pretrained failed: {e1}", flush=True)
+                print(f"[ACE-Step] Trying inject_adapter_in_model approach...", flush=True)
+
+                from peft import inject_adapter_in_model
+                from peft.config import PeftConfigMixin
+                peft_config = PeftConfigMixin.from_pretrained(lora_path)
+                inject_adapter_in_model(transformer, peft_config, adapter_name="default")
+
+                state_dict = safe_load(adapter_model_path)
+                print(f"[ACE-Step] Adapter state_dict keys (first 10): {list(state_dict.keys())[:10]}", flush=True)
+
+                missing, unexpected = transformer.load_state_dict(state_dict, strict=False)
+                print(f"[ACE-Step] Missing keys: {len(missing)}, Unexpected keys: {len(unexpected)}", flush=True)
+                if unexpected:
+                    print(f"[ACE-Step] Unexpected (first 5): {unexpected[:5]}", flush=True)
+                if missing:
+                    print(f"[ACE-Step] Missing (first 5): {missing[:5]}", flush=True)
+
+                dit_handler.ace_step_transformer = transformer
+                print(f"[ACE-Step] Loaded {peft_type} adapter via inject_adapter_in_model", flush=True)
         else:
             dit_handler.load_lora(lora_path, lora_scale)
 
