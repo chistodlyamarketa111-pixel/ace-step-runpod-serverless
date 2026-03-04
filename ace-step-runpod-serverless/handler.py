@@ -121,16 +121,25 @@ def apply_lora(lora_name, lora_scale=1.0):
     try:
         if current_lora:
             try:
-                transformer = dit_handler.ace_step_transformer
-                if hasattr(transformer, 'unload_lora'):
-                    transformer.unload_lora()
-                elif hasattr(transformer, 'disable_adapters'):
-                    transformer.disable_adapters()
-                    if hasattr(transformer, 'delete_adapter'):
-                        transformer.delete_adapter('default')
+                if hasattr(dit_handler, 'remove_all_loras'):
+                    dit_handler.remove_all_loras()
+                elif hasattr(dit_handler, 'model') and dit_handler.model is not None:
+                    decoder = getattr(dit_handler.model, 'decoder', dit_handler.model)
+                    from peft import PeftModel
+                    if isinstance(decoder, PeftModel):
+                        base = decoder.get_base_model()
+                        if hasattr(dit_handler.model, 'decoder'):
+                            dit_handler.model.decoder = base
+                        else:
+                            dit_handler.model = base
+                elif hasattr(dit_handler, 'ace_step_transformer'):
+                    transformer = dit_handler.ace_step_transformer
+                    if hasattr(transformer, 'unload_lora'):
+                        transformer.unload_lora()
             except Exception as ue:
                 print(f"[ACE-Step] Warning during unload: {ue}", flush=True)
-            dit_handler.lora_path = "none"
+            if hasattr(dit_handler, 'lora_path'):
+                dit_handler.lora_path = "none"
             print(f"[ACE-Step] Unloaded previous LoRA: {current_lora}", flush=True)
 
         lora_info = available[lora_name]
@@ -147,54 +156,52 @@ def apply_lora(lora_name, lora_scale=1.0):
             print(f"[ACE-Step] Adapter type: {peft_type}", flush=True)
 
         if peft_type in ("LOKR", "LOHA", "IA3", "OFT"):
-            import peft
-            from peft import PeftModel, get_peft_model, LoKrConfig
-            from safetensors.torch import load_file as safe_load
-            import json as _json2
+            from peft import PeftModel
 
-            transformer = dit_handler.ace_step_transformer
-            print(f"[ACE-Step] Transformer type: {type(transformer)}", flush=True)
-            print(f"[ACE-Step] Transformer attrs: {[a for a in dir(transformer) if not a.startswith('_')][:30]}", flush=True)
+            decoder = None
+            decoder_source = None
+            if hasattr(dit_handler, 'model') and dit_handler.model is not None:
+                if hasattr(dit_handler.model, 'decoder'):
+                    decoder = dit_handler.model.decoder
+                    decoder_source = "dit_handler.model.decoder"
+                else:
+                    decoder = dit_handler.model
+                    decoder_source = "dit_handler.model"
+            elif hasattr(dit_handler, 'ace_step_transformer'):
+                decoder = dit_handler.ace_step_transformer
+                decoder_source = "dit_handler.ace_step_transformer"
 
-            adapter_config_path = os.path.join(lora_path, "adapter_config.json")
-            adapter_model_path = os.path.join(lora_path, "adapter_model.safetensors")
+            if decoder is None:
+                raise RuntimeError("Cannot find transformer/decoder in dit_handler")
 
-            with open(adapter_config_path) as f:
-                adapter_cfg = _json2.load(f)
-            print(f"[ACE-Step] Adapter config: {adapter_cfg}", flush=True)
+            print(f"[ACE-Step] Decoder source: {decoder_source}, type: {type(decoder).__name__}", flush=True)
 
-            try:
-                wrapped = PeftModel.from_pretrained(transformer, lora_path, adapter_name="default")
-                if hasattr(wrapped, 'set_adapter'):
-                    wrapped.set_adapter("default")
+            wrapped = PeftModel.from_pretrained(decoder, lora_path, adapter_name="default", is_trainable=False)
+            wrapped.set_adapter("default")
+
+            if decoder_source == "dit_handler.model.decoder":
+                dit_handler.model.decoder = wrapped
+            elif decoder_source == "dit_handler.model":
+                dit_handler.model = wrapped
+            else:
                 dit_handler.ace_step_transformer = wrapped
-                print(f"[ACE-Step] Loaded {peft_type} adapter via PeftModel.from_pretrained", flush=True)
-            except Exception as e1:
-                print(f"[ACE-Step] PeftModel.from_pretrained failed: {e1}", flush=True)
-                print(f"[ACE-Step] Trying inject_adapter_in_model approach...", flush=True)
 
-                from peft import inject_adapter_in_model
-                from peft.config import PeftConfigMixin
-                peft_config = PeftConfigMixin.from_pretrained(lora_path)
-                inject_adapter_in_model(transformer, peft_config, adapter_name="default")
-
-                state_dict = safe_load(adapter_model_path)
-                print(f"[ACE-Step] Adapter state_dict keys (first 10): {list(state_dict.keys())[:10]}", flush=True)
-
-                missing, unexpected = transformer.load_state_dict(state_dict, strict=False)
-                print(f"[ACE-Step] Missing keys: {len(missing)}, Unexpected keys: {len(unexpected)}", flush=True)
-                if unexpected:
-                    print(f"[ACE-Step] Unexpected (first 5): {unexpected[:5]}", flush=True)
-                if missing:
-                    print(f"[ACE-Step] Missing (first 5): {missing[:5]}", flush=True)
-
-                dit_handler.ace_step_transformer = transformer
-                print(f"[ACE-Step] Loaded {peft_type} adapter via inject_adapter_in_model", flush=True)
+            print(f"[ACE-Step] Loaded {peft_type} adapter via PeftModel on {decoder_source}", flush=True)
         else:
-            dit_handler.load_lora(lora_path, lora_scale)
+            if hasattr(dit_handler, 'add_lora'):
+                result = dit_handler.add_lora(lora_path)
+                if isinstance(result, str) and result.startswith("❌"):
+                    raise RuntimeError(f"add_lora failed: {result}")
+                print(f"[ACE-Step] Loaded standard LoRA via add_lora: {result}", flush=True)
+            elif hasattr(dit_handler, 'load_lora'):
+                dit_handler.load_lora(lora_path, lora_scale)
+            else:
+                raise RuntimeError("No load_lora or add_lora method available on dit_handler")
 
-        dit_handler.lora_path = lora_path
-        dit_handler.lora_weight = lora_scale
+        if hasattr(dit_handler, 'lora_path'):
+            dit_handler.lora_path = lora_path
+        if hasattr(dit_handler, 'lora_weight'):
+            dit_handler.lora_weight = lora_scale
         current_lora = lora_name
         print(f"[ACE-Step] LoRA loaded successfully: {lora_name}", flush=True)
         return True
