@@ -121,14 +121,16 @@ def apply_lora(lora_name, lora_scale=1.0):
     try:
         if current_lora:
             try:
-                dit_handler.unload_lora()
-            except Exception:
-                import peft
-                model = dit_handler.dit.model if hasattr(dit_handler.dit, 'model') else dit_handler.dit
-                if hasattr(model, 'disable_adapters'):
-                    model.disable_adapters()
-                if hasattr(model, 'delete_adapter'):
-                    model.delete_adapter('default')
+                transformer = dit_handler.ace_step_transformer
+                if hasattr(transformer, 'unload_lora'):
+                    transformer.unload_lora()
+                elif hasattr(transformer, 'disable_adapters'):
+                    transformer.disable_adapters()
+                    if hasattr(transformer, 'delete_adapter'):
+                        transformer.delete_adapter('default')
+            except Exception as ue:
+                print(f"[ACE-Step] Warning during unload: {ue}", flush=True)
+            dit_handler.lora_path = "none"
             print(f"[ACE-Step] Unloaded previous LoRA: {current_lora}", flush=True)
 
         lora_info = available[lora_name]
@@ -145,15 +147,19 @@ def apply_lora(lora_name, lora_scale=1.0):
             print(f"[ACE-Step] Adapter type: {peft_type}", flush=True)
 
         if peft_type in ("LOKR", "LOHA", "IA3", "OFT"):
-            from peft import PeftModel
-            model = dit_handler.dit.model if hasattr(dit_handler.dit, 'model') else dit_handler.dit
-            dit_handler.dit = PeftModel.from_pretrained(model, lora_path, adapter_name="default")
-            if hasattr(dit_handler.dit, 'set_adapter'):
-                dit_handler.dit.set_adapter("default")
-            print(f"[ACE-Step] Loaded {peft_type} adapter via PeftModel", flush=True)
+            from peft import PeftModel, set_peft_model_state_dict
+            transformer = dit_handler.ace_step_transformer
+            base_model = transformer.model if hasattr(transformer, 'model') else transformer
+            wrapped = PeftModel.from_pretrained(base_model, lora_path, adapter_name="default")
+            if hasattr(wrapped, 'set_adapter'):
+                wrapped.set_adapter("default")
+            dit_handler.ace_step_transformer = wrapped
+            print(f"[ACE-Step] Loaded {peft_type} adapter via PeftModel on ace_step_transformer", flush=True)
         else:
-            dit_handler.load_lora(lora_path=lora_path, lora_scale=lora_scale)
+            dit_handler.load_lora(lora_path, lora_scale)
 
+        dit_handler.lora_path = lora_path
+        dit_handler.lora_weight = lora_scale
         current_lora = lora_name
         print(f"[ACE-Step] LoRA loaded successfully: {lora_name}", flush=True)
         return True
