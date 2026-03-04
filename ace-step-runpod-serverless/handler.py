@@ -64,6 +64,34 @@ def scan_available_loras():
     return loras
 
 
+HF_LORA_REPO_PREFIX = os.environ.get("HF_LORA_REPO_PREFIX", "ruslanmusinrusmus")
+
+
+def download_lora_from_hf(lora_name):
+    try:
+        from huggingface_hub import snapshot_download
+        repo_id = f"{HF_LORA_REPO_PREFIX}/{lora_name}"
+        target_dir = os.path.join(NETWORK_VOLUME_LORA_DIR, lora_name)
+        os.makedirs(NETWORK_VOLUME_LORA_DIR, exist_ok=True)
+        print(f"[ACE-Step] Downloading LoRA from HuggingFace: {repo_id} -> {target_dir}", flush=True)
+        snapshot_download(
+            repo_id=repo_id,
+            local_dir=target_dir,
+            ignore_patterns=["*.md", ".gitattributes"],
+        )
+        config_file = os.path.join(target_dir, "adapter_config.json")
+        safetensors = os.path.join(target_dir, "adapter_model.safetensors")
+        bin_file = os.path.join(target_dir, "adapter_model.bin")
+        if os.path.exists(config_file) and (os.path.exists(safetensors) or os.path.exists(bin_file)):
+            print(f"[ACE-Step] LoRA downloaded successfully: {lora_name}", flush=True)
+            return True
+        print(f"[ACE-Step] Downloaded repo missing adapter files: {lora_name}", flush=True)
+        return False
+    except Exception as e:
+        print(f"[ACE-Step] Failed to download LoRA {lora_name} from HF: {e}", flush=True)
+        return False
+
+
 def apply_lora(lora_name, lora_scale=1.0):
     global dit_handler, current_lora
 
@@ -83,8 +111,12 @@ def apply_lora(lora_name, lora_scale=1.0):
 
     available = scan_available_loras()
     if lora_name not in available:
-        print(f"[ACE-Step] LoRA not found: {lora_name}. Available: {list(available.keys())}", flush=True)
-        return False
+        print(f"[ACE-Step] LoRA not found locally: {lora_name}. Trying HuggingFace download...", flush=True)
+        if download_lora_from_hf(lora_name):
+            available = scan_available_loras()
+        if lora_name not in available:
+            print(f"[ACE-Step] LoRA not found: {lora_name}. Available: {list(available.keys())}", flush=True)
+            return False
 
     try:
         if current_lora:
