@@ -15,7 +15,8 @@ import traceback
 import tempfile
 import subprocess
 
-print("[ACE-Step] Handler starting (lazy loading mode)...", flush=True)
+HANDLER_VERSION = "2026-03-05-v3"
+print(f"[ACE-Step] Handler starting (lazy loading mode) version={HANDLER_VERSION}...", flush=True)
 
 import runpod
 import torch
@@ -121,95 +122,34 @@ def apply_lora(lora_name, lora_scale=1.0):
     try:
         if current_lora:
             try:
-                if hasattr(dit_handler, 'remove_all_loras'):
-                    dit_handler.remove_all_loras()
-                elif hasattr(dit_handler, 'model') and dit_handler.model is not None:
-                    decoder = getattr(dit_handler.model, 'decoder', dit_handler.model)
-                    from peft import PeftModel
-                    if isinstance(decoder, PeftModel):
-                        base = decoder.get_base_model()
-                        if hasattr(dit_handler.model, 'decoder'):
-                            dit_handler.model.decoder = base
-                        else:
-                            dit_handler.model = base
-                elif hasattr(dit_handler, 'ace_step_transformer'):
-                    transformer = dit_handler.ace_step_transformer
-                    if hasattr(transformer, 'unload_lora'):
-                        transformer.unload_lora()
+                result = dit_handler.unload_lora()
+                print(f"[ACE-Step] Unloaded previous LoRA: {current_lora} -> {result}", flush=True)
             except Exception as ue:
                 print(f"[ACE-Step] Warning during unload: {ue}", flush=True)
-            if hasattr(dit_handler, 'lora_path'):
-                dit_handler.lora_path = "none"
-            print(f"[ACE-Step] Unloaded previous LoRA: {current_lora}", flush=True)
 
         lora_info = available[lora_name]
         lora_path = lora_info["path"]
         print(f"[ACE-Step] Loading LoRA: {lora_name} (scale={lora_scale}) from {lora_path} ({lora_info['source']})", flush=True)
 
-        import json as _json
-        config_path = os.path.join(lora_path, "adapter_config.json")
-        peft_type = "LORA"
-        if os.path.exists(config_path):
-            with open(config_path) as f:
-                cfg = _json.load(f)
-                peft_type = cfg.get("peft_type", "LORA")
-            print(f"[ACE-Step] Adapter type: {peft_type}", flush=True)
+        result = dit_handler.add_lora(lora_path, adapter_name=lora_name)
+        print(f"[ACE-Step] add_lora result: {result}", flush=True)
 
-        if peft_type in ("LOKR", "LOHA", "IA3", "OFT"):
-            from peft import PeftModel
+        if isinstance(result, str) and result.startswith("❌"):
+            return f"add_lora error: {result}"
 
-            decoder = None
-            decoder_source = None
-            if hasattr(dit_handler, 'model') and dit_handler.model is not None:
-                if hasattr(dit_handler.model, 'decoder'):
-                    decoder = dit_handler.model.decoder
-                    decoder_source = "dit_handler.model.decoder"
-                else:
-                    decoder = dit_handler.model
-                    decoder_source = "dit_handler.model"
-            elif hasattr(dit_handler, 'ace_step_transformer'):
-                decoder = dit_handler.ace_step_transformer
-                decoder_source = "dit_handler.ace_step_transformer"
+        if lora_scale != 1.0 and hasattr(dit_handler, 'set_lora_scale'):
+            dit_handler.set_lora_scale(lora_name, lora_scale)
+            print(f"[ACE-Step] Set LoRA scale: {lora_scale}", flush=True)
 
-            if decoder is None:
-                raise RuntimeError("Cannot find transformer/decoder in dit_handler")
-
-            print(f"[ACE-Step] Decoder source: {decoder_source}, type: {type(decoder).__name__}", flush=True)
-
-            wrapped = PeftModel.from_pretrained(decoder, lora_path, adapter_name="default", is_trainable=False)
-            wrapped.set_adapter("default")
-
-            if decoder_source == "dit_handler.model.decoder":
-                dit_handler.model.decoder = wrapped
-            elif decoder_source == "dit_handler.model":
-                dit_handler.model = wrapped
-            else:
-                dit_handler.ace_step_transformer = wrapped
-
-            print(f"[ACE-Step] Loaded {peft_type} adapter via PeftModel on {decoder_source}", flush=True)
-        else:
-            if hasattr(dit_handler, 'add_lora'):
-                result = dit_handler.add_lora(lora_path)
-                if isinstance(result, str) and result.startswith("❌"):
-                    raise RuntimeError(f"add_lora failed: {result}")
-                print(f"[ACE-Step] Loaded standard LoRA via add_lora: {result}", flush=True)
-            elif hasattr(dit_handler, 'load_lora'):
-                dit_handler.load_lora(lora_path, lora_scale)
-            else:
-                raise RuntimeError("No load_lora or add_lora method available on dit_handler")
-
-        if hasattr(dit_handler, 'lora_path'):
-            dit_handler.lora_path = lora_path
-        if hasattr(dit_handler, 'lora_weight'):
-            dit_handler.lora_weight = lora_scale
         current_lora = lora_name
         print(f"[ACE-Step] LoRA loaded successfully: {lora_name}", flush=True)
         return True
     except Exception as e:
-        print(f"[ACE-Step] Error loading LoRA {lora_name}: {e}", flush=True)
+        err_msg = f"{type(e).__name__}: {str(e)[:1000]}"
+        print(f"[ACE-Step] Error loading LoRA {lora_name}: {err_msg}", flush=True)
         traceback.print_exc()
         current_lora = None
-        return False
+        return err_msg
 
 
 def ensure_models_loaded():
@@ -510,9 +450,50 @@ def handler(job):
         lora_name = job_input.get("lora_name", None)
         lora_scale = float(job_input.get("lora_scale", 1.0))
 
+        if job_input.get("action") == "diagnose_lora":
+            diag = {"dit_type": str(type(dit_handler.dit)), "dit_class": dit_handler.dit.__class__.__name__}
+            diag["has_model"] = hasattr(dit_handler.dit, "model")
+            if diag["has_model"]:
+                diag["model_type"] = str(type(dit_handler.dit.model))
+            diag["lora_methods"] = [m for m in dir(dit_handler) if "lora" in m.lower()]
+            for mname in ["load_lora", "add_lora", "unload_lora"]:
+                diag[f"has_{mname}"] = hasattr(dit_handler, mname)
+                if hasattr(dit_handler, mname):
+                    import inspect as _insp
+                    diag[f"sig_{mname}"] = str(_insp.signature(getattr(dit_handler, mname)))
+            available = scan_available_loras()
+            diag["available_loras"] = {}
+            for n, info in available.items():
+                lp = info["path"]
+                files = os.listdir(lp) if os.path.isdir(lp) else []
+                cfg_path = os.path.join(lp, "adapter_config.json")
+                cfg_data = {}
+                if os.path.exists(cfg_path):
+                    import json as _j
+                    with open(cfg_path) as _f:
+                        cfg_data = _j.load(_f)
+                diag["available_loras"][n] = {"path": lp, "source": info["source"], "files": files, "config": cfg_data}
+            test_lora = job_input.get("test_lora", list(available.keys())[0] if available else None)
+            if test_lora and test_lora in available:
+                test_path = available[test_lora]["path"]
+                diag["test_results"] = {}
+                for method_name, method_fn in [
+                    ("PeftModel_on_dit", lambda: __import__("peft").PeftModel.from_pretrained(dit_handler.dit, test_path, adapter_name="test")),
+                    ("load_lora", lambda: dit_handler.load_lora(lora_path=test_path, lora_scale=1.0) if hasattr(dit_handler, "load_lora") else "NOT_AVAILABLE"),
+                    ("add_lora", lambda: dit_handler.add_lora(test_path, adapter_name="test") if hasattr(dit_handler, "add_lora") else "NOT_AVAILABLE"),
+                ]:
+                    try:
+                        result = method_fn()
+                        diag["test_results"][method_name] = f"SUCCESS: {type(result).__name__ if result != 'NOT_AVAILABLE' else 'NOT_AVAILABLE'}"
+                    except Exception as _e:
+                        diag["test_results"][method_name] = f"FAILED: {str(_e)[:500]}"
+            return diag
+
         if lora_name and lora_name != "none":
-            if not apply_lora(lora_name, lora_scale):
-                return {"error": f"Failed to load LoRA: {lora_name}. Available: {list(scan_available_loras().keys())}"}
+            lora_result = apply_lora(lora_name, lora_scale)
+            if lora_result is not True:
+                err_detail = lora_result if isinstance(lora_result, str) else "unknown"
+                return {"error": f"Failed to load LoRA: {lora_name}. Detail: {err_detail}. Available: {list(scan_available_loras().keys())}"}
         elif current_lora and (not lora_name or lora_name == "none"):
             apply_lora(None)
 
