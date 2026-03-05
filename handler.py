@@ -147,31 +147,65 @@ def apply_lora(lora_name, lora_scale=1.0):
                 peft_type = cfg.get("peft_type", "LORA")
             print(f"[ACE-Step] Adapter type: {peft_type}", flush=True)
 
+        print(f"[ACE-Step] dit_handler type: {type(dit_handler)}", flush=True)
+        print(f"[ACE-Step] dit_handler.dit type: {type(dit_handler.dit)}", flush=True)
+        print(f"[ACE-Step] dit_handler.dit has 'model': {hasattr(dit_handler.dit, 'model')}", flush=True)
+        print(f"[ACE-Step] dit_handler methods: {[m for m in dir(dit_handler) if 'lora' in m.lower()]}", flush=True)
+
         if peft_type in ("LOKR", "LOHA", "IA3", "OFT"):
             from peft import PeftModel
-            model = dit_handler.dit.model if hasattr(dit_handler.dit, 'model') else dit_handler.dit
-            dit_handler.dit = PeftModel.from_pretrained(model, lora_path, adapter_name="default")
-            if hasattr(dit_handler.dit, 'set_adapter'):
-                dit_handler.dit.set_adapter("default")
-            print(f"[ACE-Step] Loaded {peft_type} adapter via PeftModel", flush=True)
-        else:
+            base_model = dit_handler.dit
+            print(f"[ACE-Step] Trying PeftModel.from_pretrained on {type(base_model)}", flush=True)
             try:
-                result = dit_handler.add_lora(lora_path, adapter_name=lora_name)
-                print(f"[ACE-Step] add_lora result: {result}", flush=True)
-                if isinstance(result, str) and result.startswith("❌"):
-                    raise RuntimeError(f"add_lora returned error: {result}")
-            except Exception as add_err:
-                print(f"[ACE-Step] add_lora failed ({add_err}), trying load_lora...", flush=True)
-                if hasattr(dit_handler, 'load_lora'):
-                    dit_handler.load_lora(lora_path=lora_path, lora_scale=lora_scale)
-                    print(f"[ACE-Step] Loaded via load_lora", flush=True)
-                else:
-                    from peft import PeftModel
-                    model = dit_handler.dit.model if hasattr(dit_handler.dit, 'model') else dit_handler.dit
-                    dit_handler.dit = PeftModel.from_pretrained(model, lora_path, adapter_name="default")
+                dit_handler.dit = PeftModel.from_pretrained(base_model, lora_path, adapter_name="default")
+                if hasattr(dit_handler.dit, 'set_adapter'):
+                    dit_handler.dit.set_adapter("default")
+                print(f"[ACE-Step] Loaded {peft_type} adapter via PeftModel on dit directly", flush=True)
+            except Exception as e1:
+                print(f"[ACE-Step] PeftModel on dit failed: {e1}", flush=True)
+                if hasattr(base_model, 'model'):
+                    print(f"[ACE-Step] Trying on dit.model ({type(base_model.model)})", flush=True)
+                    dit_handler.dit = PeftModel.from_pretrained(base_model.model, lora_path, adapter_name="default")
                     if hasattr(dit_handler.dit, 'set_adapter'):
                         dit_handler.dit.set_adapter("default")
-                    print(f"[ACE-Step] Loaded LORA via PeftModel fallback", flush=True)
+                    print(f"[ACE-Step] Loaded {peft_type} via PeftModel on dit.model", flush=True)
+                else:
+                    raise
+        else:
+            methods_tried = []
+            loaded = False
+            if hasattr(dit_handler, 'load_lora'):
+                try:
+                    dit_handler.load_lora(lora_path=lora_path, lora_scale=lora_scale)
+                    print(f"[ACE-Step] Loaded via load_lora", flush=True)
+                    loaded = True
+                except Exception as e_load:
+                    methods_tried.append(f"load_lora: {e_load}")
+                    print(f"[ACE-Step] load_lora failed: {e_load}", flush=True)
+            if not loaded and hasattr(dit_handler, 'add_lora'):
+                try:
+                    result = dit_handler.add_lora(lora_path, adapter_name=lora_name)
+                    print(f"[ACE-Step] add_lora result: {result}", flush=True)
+                    if isinstance(result, str) and result.startswith("❌"):
+                        raise RuntimeError(f"add_lora returned error: {result}")
+                    loaded = True
+                except Exception as e_add:
+                    methods_tried.append(f"add_lora: {e_add}")
+                    print(f"[ACE-Step] add_lora failed: {e_add}", flush=True)
+            if not loaded:
+                print(f"[ACE-Step] All native methods failed: {methods_tried}. Trying PeftModel fallback...", flush=True)
+                from peft import PeftModel
+                base_model = dit_handler.dit
+                try:
+                    dit_handler.dit = PeftModel.from_pretrained(base_model, lora_path, adapter_name="default")
+                except Exception:
+                    if hasattr(base_model, 'model'):
+                        dit_handler.dit = PeftModel.from_pretrained(base_model.model, lora_path, adapter_name="default")
+                    else:
+                        raise
+                if hasattr(dit_handler.dit, 'set_adapter'):
+                    dit_handler.dit.set_adapter("default")
+                print(f"[ACE-Step] Loaded LORA via PeftModel fallback", flush=True)
 
         current_lora = lora_name
         print(f"[ACE-Step] LoRA loaded successfully: {lora_name}", flush=True)
