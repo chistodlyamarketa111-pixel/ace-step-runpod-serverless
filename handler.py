@@ -98,8 +98,8 @@ def apply_lora(lora_name, lora_scale=1.0):
     if not lora_name or lora_name == "none":
         if current_lora:
             try:
-                result = dit_handler.unload_lora()
-                print(f"[ACE-Step] Unloaded LoRA: {current_lora} -> {result}", flush=True)
+                dit_handler.unload_lora()
+                print(f"[ACE-Step] Unloaded LoRA: {current_lora}", flush=True)
                 current_lora = None
             except Exception as e:
                 print(f"[ACE-Step] Error unloading LoRA: {e}", flush=True)
@@ -121,24 +121,57 @@ def apply_lora(lora_name, lora_scale=1.0):
     try:
         if current_lora:
             try:
-                result = dit_handler.unload_lora()
-                print(f"[ACE-Step] Unloaded previous LoRA: {current_lora} -> {result}", flush=True)
-            except Exception as ue:
-                print(f"[ACE-Step] Warning during unload: {ue}", flush=True)
+                dit_handler.unload_lora()
+            except Exception:
+                try:
+                    import peft
+                    model = dit_handler.dit.model if hasattr(dit_handler.dit, 'model') else dit_handler.dit
+                    if hasattr(model, 'disable_adapters'):
+                        model.disable_adapters()
+                    if hasattr(model, 'delete_adapter'):
+                        model.delete_adapter('default')
+                except Exception:
+                    pass
+            print(f"[ACE-Step] Unloaded previous LoRA: {current_lora}", flush=True)
 
         lora_info = available[lora_name]
         lora_path = lora_info["path"]
         print(f"[ACE-Step] Loading LoRA: {lora_name} (scale={lora_scale}) from {lora_path} ({lora_info['source']})", flush=True)
 
-        result = dit_handler.add_lora(lora_path, adapter_name=lora_name)
-        print(f"[ACE-Step] add_lora result: {result}", flush=True)
+        import json as _json
+        config_path = os.path.join(lora_path, "adapter_config.json")
+        peft_type = "LORA"
+        if os.path.exists(config_path):
+            with open(config_path) as f:
+                cfg = _json.load(f)
+                peft_type = cfg.get("peft_type", "LORA")
+            print(f"[ACE-Step] Adapter type: {peft_type}", flush=True)
 
-        if isinstance(result, str) and result.startswith("❌"):
-            raise RuntimeError(f"add_lora failed: {result}")
-
-        if lora_scale != 1.0 and hasattr(dit_handler, 'set_lora_scale'):
-            dit_handler.set_lora_scale(lora_name, lora_scale)
-            print(f"[ACE-Step] Set LoRA scale: {lora_scale}", flush=True)
+        if peft_type in ("LOKR", "LOHA", "IA3", "OFT"):
+            from peft import PeftModel
+            model = dit_handler.dit.model if hasattr(dit_handler.dit, 'model') else dit_handler.dit
+            dit_handler.dit = PeftModel.from_pretrained(model, lora_path, adapter_name="default")
+            if hasattr(dit_handler.dit, 'set_adapter'):
+                dit_handler.dit.set_adapter("default")
+            print(f"[ACE-Step] Loaded {peft_type} adapter via PeftModel", flush=True)
+        else:
+            try:
+                result = dit_handler.add_lora(lora_path, adapter_name=lora_name)
+                print(f"[ACE-Step] add_lora result: {result}", flush=True)
+                if isinstance(result, str) and result.startswith("❌"):
+                    raise RuntimeError(f"add_lora returned error: {result}")
+            except Exception as add_err:
+                print(f"[ACE-Step] add_lora failed ({add_err}), trying load_lora...", flush=True)
+                if hasattr(dit_handler, 'load_lora'):
+                    dit_handler.load_lora(lora_path=lora_path, lora_scale=lora_scale)
+                    print(f"[ACE-Step] Loaded via load_lora", flush=True)
+                else:
+                    from peft import PeftModel
+                    model = dit_handler.dit.model if hasattr(dit_handler.dit, 'model') else dit_handler.dit
+                    dit_handler.dit = PeftModel.from_pretrained(model, lora_path, adapter_name="default")
+                    if hasattr(dit_handler.dit, 'set_adapter'):
+                        dit_handler.dit.set_adapter("default")
+                    print(f"[ACE-Step] Loaded LORA via PeftModel fallback", flush=True)
 
         current_lora = lora_name
         print(f"[ACE-Step] LoRA loaded successfully: {lora_name}", flush=True)
@@ -147,6 +180,11 @@ def apply_lora(lora_name, lora_scale=1.0):
         print(f"[ACE-Step] Error loading LoRA {lora_name}: {e}", flush=True)
         traceback.print_exc()
         current_lora = None
+        import shutil
+        cached_path = os.path.join(NETWORK_VOLUME_LORA_DIR, lora_name)
+        if os.path.exists(cached_path):
+            print(f"[ACE-Step] Removing cached LoRA and re-downloading: {cached_path}", flush=True)
+            shutil.rmtree(cached_path, ignore_errors=True)
         return False
 
 
