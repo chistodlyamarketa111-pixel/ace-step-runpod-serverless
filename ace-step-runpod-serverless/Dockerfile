@@ -67,6 +67,7 @@ RUN python -c "from huggingface_hub import snapshot_download; \
 
 WORKDIR /app
 
+ARG CACHE_BUST=1
 COPY handler.py /app/handler.py
 COPY test_input.json /app/test_input.json
 
