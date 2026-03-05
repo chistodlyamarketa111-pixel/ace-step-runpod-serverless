@@ -62,9 +62,6 @@ ENV ACESTEP_LORA_DIR=/app/loras
 
 RUN mkdir -p /app/loras
 
-RUN python -c "from huggingface_hub import snapshot_download; \
-    snapshot_download('ruslanmusinrusmus/russianpop', local_dir='/app/loras/russianpop')" || true
-
 WORKDIR /app
 
 ARG CACHE_BUST=1
