@@ -3,6 +3,7 @@
 ACE-Step v1.5 — RunPod Serverless Handler
 LAZY LOADING: Models load on first request, not at startup.
 Supports LoRA adapters for style customization.
+Supports hybrid mode: instrumental + vocal separation + mixing.
 """
 
 import base64
@@ -11,8 +12,10 @@ import os
 import sys
 import time
 import traceback
+import tempfile
+import subprocess
 
-HANDLER_VERSION = "2026-03-05-v4"
+HANDLER_VERSION = "2026-03-05-v5"
 print(f"[ACE-Step] Handler starting (lazy loading mode) version={HANDLER_VERSION}...", flush=True)
 
 import runpod
@@ -49,15 +52,10 @@ def _scan_lora_dir(directory, loras):
             config_file = os.path.join(lora_path, "adapter_config.json")
             safetensors = os.path.join(lora_path, "adapter_model.safetensors")
             bin_file = os.path.join(lora_path, "adapter_model.bin")
-            lokr_file = os.path.join(lora_path, "lokr_weights.safetensors")
             if os.path.exists(config_file) and (os.path.exists(safetensors) or os.path.exists(bin_file)):
                 source = "volume" if directory == NETWORK_VOLUME_LORA_DIR else "builtin"
                 loras[name] = {"path": lora_path, "source": source}
                 print(f"[ACE-Step] Found LoRA: {name} -> {lora_path} ({source})", flush=True)
-            elif os.path.exists(lokr_file):
-                source = "volume" if directory == NETWORK_VOLUME_LORA_DIR else "builtin"
-                loras[name] = {"path": lora_path, "source": source}
-                print(f"[ACE-Step] Found LoKr: {name} -> {lora_path} ({source})", flush=True)
 
 
 def scan_available_loras():
@@ -96,15 +94,13 @@ def download_lora_from_hf(lora_name):
 
 
 def apply_lora(lora_name, lora_scale=1.0):
-    """Load/unload LoRA using ACE-Step's built-in add_lora/unload_lora methods.
-    Returns True on success, or error string on failure."""
     global dit_handler, current_lora
 
     if not lora_name or lora_name == "none":
         if current_lora:
             try:
-                result = dit_handler.unload_lora()
-                print(f"[ACE-Step] Unloaded LoRA: {current_lora} -> {result}", flush=True)
+                dit_handler.unload_lora()
+                print(f"[ACE-Step] Unloaded LoRA: {current_lora}", flush=True)
                 current_lora = None
             except Exception as e:
                 print(f"[ACE-Step] Error unloading LoRA: {e}", flush=True)
@@ -120,10 +116,8 @@ def apply_lora(lora_name, lora_scale=1.0):
         if download_lora_from_hf(lora_name):
             available = scan_available_loras()
         if lora_name not in available:
-            return f"LoRA '{lora_name}' not found. Available: {list(available.keys())}"
-
-    lora_info = available[lora_name]
-    lora_path = lora_info["path"]
+            print(f"[ACE-Step] LoRA not found: {lora_name}. Available: {list(available.keys())}", flush=True)
+            return False
 
     try:
         if current_lora:
@@ -133,34 +127,29 @@ def apply_lora(lora_name, lora_scale=1.0):
             except Exception as ue:
                 print(f"[ACE-Step] Warning during unload: {ue}", flush=True)
 
-        print(f"[ACE-Step] Loading LoRA via add_lora: {lora_name} from {lora_path} ({lora_info['source']})", flush=True)
+        lora_info = available[lora_name]
+        lora_path = lora_info["path"]
+        print(f"[ACE-Step] Loading LoRA: {lora_name} (scale={lora_scale}) from {lora_path} ({lora_info['source']})", flush=True)
 
         result = dit_handler.add_lora(lora_path, adapter_name=lora_name)
         print(f"[ACE-Step] add_lora result: {result}", flush=True)
 
         if isinstance(result, str) and result.startswith("❌"):
-            current_lora = None
-            return f"add_lora failed: {result}"
+            return f"add_lora error: {result}"
 
-        dit_handler.use_lora = True
-        dit_handler.lora_scale = lora_scale
-
-        if lora_scale != 1.0:
-            try:
-                dit_handler.set_lora_scale(lora_name, lora_scale)
-                print(f"[ACE-Step] Set LoRA scale: {lora_scale}", flush=True)
-            except Exception as se:
-                print(f"[ACE-Step] Warning setting scale: {se}", flush=True)
+        if lora_scale != 1.0 and hasattr(dit_handler, 'set_lora_scale'):
+            dit_handler.set_lora_scale(lora_name, lora_scale)
+            print(f"[ACE-Step] Set LoRA scale: {lora_scale}", flush=True)
 
         current_lora = lora_name
         print(f"[ACE-Step] LoRA loaded successfully: {lora_name}", flush=True)
         return True
     except Exception as e:
-        err_msg = f"{type(e).__name__}: {str(e)}"
+        err_msg = f"{type(e).__name__}: {str(e)[:1000]}"
         print(f"[ACE-Step] Error loading LoRA {lora_name}: {err_msg}", flush=True)
         traceback.print_exc()
         current_lora = None
-        return f"Exception: {err_msg}"
+        return err_msg
 
 
 def ensure_models_loaded():
@@ -209,94 +198,368 @@ def ensure_models_loaded():
         traceback.print_exc()
         llm_handler = None
 
+    available_loras = scan_available_loras()
+    print(f"[ACE-Step] Available LoRAs: {list(available_loras.keys()) if available_loras else 'none'}", flush=True)
+
     elapsed = time.time() - start
     print(f"[ACE-Step] Models loaded in {elapsed:.1f}s", flush=True)
     models_loaded = True
     return True
 
 
-def handler_worker(job):
-    try:
-        job_input = job.get("input", {})
+demucs_model = None
 
-        action = job_input.get("action")
-        if action == "health":
+def ensure_demucs_loaded():
+    global demucs_model
+    if demucs_model is not None:
+        return True
+    try:
+        import demucs.pretrained
+        print("[ACE-Step] Loading Demucs model (htdemucs)...", flush=True)
+        demucs_model = demucs.pretrained.get_model("htdemucs")
+        demucs_model.to("cuda")
+        demucs_model.eval()
+        print("[ACE-Step] Demucs loaded OK", flush=True)
+        return True
+    except Exception as e:
+        print(f"[ACE-Step] Demucs load error: {e}", flush=True)
+        traceback.print_exc()
+        return False
+
+
+def separate_vocals(audio_path):
+    if not ensure_demucs_loaded():
+        raise RuntimeError("Demucs not available")
+
+    import torchaudio
+    import demucs.apply
+
+    waveform, sr = torchaudio.load(audio_path)
+    if sr != demucs_model.samplerate:
+        waveform = torchaudio.functional.resample(waveform, sr, demucs_model.samplerate)
+
+    if waveform.dim() == 1:
+        waveform = waveform.unsqueeze(0)
+    if waveform.shape[0] == 1:
+        waveform = waveform.repeat(2, 1)
+
+    ref = waveform.mean(0)
+    waveform = (waveform - ref.mean()) / ref.std()
+    sources = demucs.apply.apply_model(demucs_model, waveform.unsqueeze(0).to("cuda"), progress=False)
+    sources = sources * ref.std() + ref.mean()
+
+    source_names = demucs_model.sources
+    vocals_idx = source_names.index("vocals")
+    vocals = sources[0, vocals_idx].cpu()
+
+    return vocals, demucs_model.samplerate
+
+
+def mix_audio(vocals_tensor, vocals_sr, instrumental_path, output_path, vocal_volume=1.0, instrumental_volume=0.85):
+    import torchaudio
+
+    inst_waveform, inst_sr = torchaudio.load(instrumental_path)
+    if inst_sr != vocals_sr:
+        inst_waveform = torchaudio.functional.resample(inst_waveform, inst_sr, vocals_sr)
+
+    if inst_waveform.shape[0] == 1:
+        inst_waveform = inst_waveform.repeat(2, 1)
+    if vocals_tensor.shape[0] == 1:
+        vocals_tensor = vocals_tensor.repeat(2, 1)
+
+    min_len = min(vocals_tensor.shape[1], inst_waveform.shape[1])
+    vocals_tensor = vocals_tensor[:, :min_len]
+    inst_waveform = inst_waveform[:, :min_len]
+
+    mixed = vocals_tensor * vocal_volume + inst_waveform * instrumental_volume
+    peak = mixed.abs().max()
+    if peak > 0.95:
+        mixed = mixed * (0.95 / peak)
+
+    torchaudio.save(output_path, mixed, vocals_sr, format="mp3")
+    return output_path
+
+
+def generate_single(job_input, job_id, override_params=None):
+    params_dict = {
+        "caption": job_input.get("prompt", ""),
+        "lyrics": job_input.get("lyrics", ""),
+        "duration": float(job_input.get("audio_duration", job_input.get("duration", -1))),
+        "task_type": job_input.get("task_type", "text2music"),
+        "seed": int(job_input.get("seed", -1)),
+        "inference_steps": int(job_input.get("inference_steps", job_input.get("infer_step",
+            DEFAULT_STEPS.get(job_input.get("model", DEFAULT_MODEL), 8)))),
+        "guidance_scale": float(job_input.get("guidance_scale", 7.0)),
+        "thinking": job_input.get("thinking", True) if llm_handler is not None else False,
+        "bpm": int(job_input.get("bpm")) if job_input.get("bpm") is not None else None,
+        "keyscale": job_input.get("key_scale", job_input.get("keyscale", "")),
+        "timesignature": job_input.get("time_signature", job_input.get("timesignature", "")),
+        "vocal_language": job_input.get("vocal_language", "unknown"),
+        "instrumental": job_input.get("instrumental", False),
+    }
+    if override_params:
+        params_dict.update(override_params)
+
+    params = GenerationParams(**params_dict)
+    audio_format = job_input.get("audio_format", "mp3")
+    config = GenerationConfig(
+        batch_size=1,
+        use_random_seed=(params_dict["seed"] < 0),
+        seeds=[params_dict["seed"]] if params_dict["seed"] >= 0 else None,
+        audio_format=audio_format if audio_format in ("mp3", "wav", "flac") else "mp3",
+    )
+
+    save_dir = tempfile.mkdtemp(prefix="ace_step_")
+    result = generate_music(
+        dit_handler=dit_handler,
+        llm_handler=llm_handler,
+        params=params,
+        config=config,
+        save_dir=save_dir,
+    )
+
+    if not result.success:
+        return None, result.error or "Generation failed"
+
+    for audio_info in result.audios:
+        audio_path = audio_info.get("path", "")
+        if audio_path and os.path.exists(audio_path):
+            return audio_path, None
+        elif "tensor" in audio_info and audio_info["tensor"] is not None:
+            import torchaudio
+            tensor = audio_info["tensor"]
+            sr = audio_info.get("sample_rate", 48000)
+            out_path = os.path.join(save_dir, f"output.{audio_format}")
+            torchaudio.save(out_path, tensor.cpu(), sr, format=audio_format)
+            return out_path, None
+
+    return None, "No audio generated"
+
+
+def handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_format):
+    start = time.time()
+    vocal_volume = float(job_input.get("vocal_volume", 1.0))
+    instrumental_volume = float(job_input.get("instrumental_volume", 0.85))
+
+    lora_info = f", lora={lora_name}(x{lora_scale})" if lora_name and lora_name != "none" else ""
+    print(f"[ACE-Step] HYBRID mode: generating full track + instrumental{lora_info}", flush=True)
+
+    print("[ACE-Step] Step 1/4: Generating full track with vocals...", flush=True)
+    full_path, err = generate_single(job_input, job["id"])
+    if err:
+        return {"error": f"Hybrid step 1 (full track) failed: {err}"}
+    print(f"[ACE-Step] Full track generated: {full_path}", flush=True)
+
+    print("[ACE-Step] Step 2/4: Generating clean instrumental...", flush=True)
+    inst_path, err = generate_single(job_input, job["id"], override_params={"instrumental": True, "lyrics": ""})
+    if err:
+        return {"error": f"Hybrid step 2 (instrumental) failed: {err}"}
+    print(f"[ACE-Step] Instrumental generated: {inst_path}", flush=True)
+
+    print("[ACE-Step] Step 3/4: Separating vocals with Demucs...", flush=True)
+    try:
+        vocals_tensor, vocals_sr = separate_vocals(full_path)
+        print(f"[ACE-Step] Vocals separated: shape={vocals_tensor.shape}, sr={vocals_sr}", flush=True)
+    except Exception as e:
+        print(f"[ACE-Step] Vocal separation failed: {e}. Returning full track instead.", flush=True)
+        with open(full_path, "rb") as f:
+            audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+        gen_time = time.time() - start
+        return {
+            "audio_base64": audio_b64,
+            "content_type": "audio/mpeg",
+            "filename": f"ace_step_hybrid_{job['id'][:12]}.mp3",
+            "generation_time": round(gen_time, 1),
+            "duration": float(job_input.get("audio_duration", job_input.get("duration", -1))),
+            "sample_rate": 48000,
+            "model": model_name,
+            "lora": lora_name if lora_name and lora_name != "none" else None,
+            "mode": "hybrid",
+            "hybrid_status": "fallback_no_demucs",
+        }
+
+    print("[ACE-Step] Step 4/4: Mixing vocals + clean instrumental...", flush=True)
+    mix_dir = tempfile.mkdtemp(prefix="ace_hybrid_")
+    mix_path = os.path.join(mix_dir, f"hybrid_mix.mp3")
+    try:
+        mix_audio(vocals_tensor, vocals_sr, inst_path, mix_path, vocal_volume, instrumental_volume)
+    except Exception as e:
+        print(f"[ACE-Step] Mix failed: {e}. Returning full track.", flush=True)
+        with open(full_path, "rb") as f:
+            audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+        gen_time = time.time() - start
+        return {
+            "audio_base64": audio_b64,
+            "content_type": "audio/mpeg",
+            "filename": f"ace_step_hybrid_{job['id'][:12]}.mp3",
+            "generation_time": round(gen_time, 1),
+            "duration": float(job_input.get("audio_duration", job_input.get("duration", -1))),
+            "sample_rate": 48000,
+            "model": model_name,
+            "lora": lora_name if lora_name and lora_name != "none" else None,
+            "mode": "hybrid",
+            "hybrid_status": "fallback_mix_failed",
+        }
+
+    gen_time = time.time() - start
+    with open(mix_path, "rb") as f:
+        audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+    print(f"[ACE-Step] HYBRID complete in {gen_time:.1f}s", flush=True)
+    return {
+        "audio_base64": audio_b64,
+        "content_type": "audio/mpeg",
+        "filename": f"ace_step_hybrid_{job['id'][:12]}.mp3",
+        "generation_time": round(gen_time, 1),
+        "duration": float(job_input.get("audio_duration", job_input.get("duration", -1))),
+        "sample_rate": 48000,
+        "model": model_name,
+        "lora": lora_name if lora_name and lora_name != "none" else None,
+        "mode": "hybrid",
+        "hybrid_status": "success",
+    }
+
+
+def handler(job):
+    global dit_handler, llm_handler
+
+    try:
+        if not ensure_models_loaded():
+            return {"error": "Failed to load models. Check worker logs."}
+
+        job_input = job["input"]
+
+        if job_input.get("action") == "list_loras":
+            available = scan_available_loras()
             return {
-                "status": "ok",
-                "handler_version": HANDLER_VERSION,
-                "models_loaded": models_loaded,
+                "loras": [
+                    {"name": name, "source": info["source"], "path": info["path"]}
+                    for name, info in available.items()
+                ],
                 "current_lora": current_lora,
-                "available_loras": list(scan_available_loras().keys()),
+                "lora_dirs": {
+                    "builtin": LORA_DIR,
+                    "network_volume": NETWORK_VOLUME_LORA_DIR,
+                },
             }
 
-        if action == "list_loras":
-            available = scan_available_loras()
-            result = {}
-            for name, info in available.items():
-                config_path = os.path.join(info["path"], "adapter_config.json")
-                peft_type = "unknown"
-                if os.path.exists(config_path):
-                    import json as _json
-                    with open(config_path) as f:
-                        cfg = _json.load(f)
-                        peft_type = cfg.get("peft_type", "unknown")
-                result[name] = {"path": info["path"], "source": info["source"], "peft_type": peft_type}
-            return {"loras": result, "current_lora": current_lora, "handler_version": HANDLER_VERSION}
+        mode = job_input.get("mode", "normal")
+        model_name = job_input.get("model", DEFAULT_MODEL)
+        audio_format = job_input.get("audio_format", "mp3")
 
-        if action == "diagnose_lora":
-            diag_name = job_input.get("lora_name", "russianpop")
-            if not ensure_models_loaded():
-                return {"error": "Model init failed"}
-            available = scan_available_loras()
+        lora_name = job_input.get("lora_name", None)
+        lora_scale = float(job_input.get("lora_scale", 1.0))
+
+        if job_input.get("action") == "diagnose_lora":
             diag = {
                 "handler_version": HANDLER_VERSION,
-                "available_loras": {},
-                "model_type": type(dit_handler.model).__name__ if dit_handler.model else "None",
-                "decoder_type": type(dit_handler.model.decoder).__name__ if dit_handler.model and hasattr(dit_handler.model, 'decoder') else "None",
-                "has_add_lora": hasattr(dit_handler, 'add_lora'),
-                "has_load_lora": hasattr(dit_handler, 'load_lora'),
-                "current_lora": current_lora,
-                "quantization": dit_handler.quantization if hasattr(dit_handler, 'quantization') else "N/A",
+                "dit_type": str(type(dit_handler.dit)),
+                "dit_class": dit_handler.dit.__class__.__name__,
             }
-            for name, info in available.items():
-                files = os.listdir(info["path"])
-                diag["available_loras"][name] = {"path": info["path"], "files": files, "source": info["source"]}
-            if diag_name in available:
-                lora_result = apply_lora(diag_name)
-                diag["load_result"] = str(lora_result)
-                diag["load_success"] = lora_result is True
-            else:
-                diag["load_result"] = f"LoRA '{diag_name}' not found"
-                diag["load_success"] = False
+            diag["lora_methods"] = [m for m in dir(dit_handler) if "lora" in m.lower()]
+            for mname in ["load_lora", "add_lora", "unload_lora"]:
+                diag[f"has_{mname}"] = hasattr(dit_handler, mname)
+
+            model_obj = dit_handler.dit
+            sd = model_obj.state_dict()
+            attn_shapes = {}
+            for k, v in sd.items():
+                if any(proj in k for proj in ["q_proj", "k_proj", "v_proj", "o_proj"]):
+                    if "weight" in k and "lora" not in k:
+                        attn_shapes[k] = list(v.shape)
+            sample_keys = sorted(attn_shapes.keys())[:16]
+            diag["model_attn_shapes"] = {k: attn_shapes[k] for k in sample_keys}
+            diag["model_total_params"] = sum(p.numel() for p in model_obj.parameters())
+
+            available = scan_available_loras()
+            diag["available_loras"] = {}
+            for n, info in available.items():
+                lp = info["path"]
+                files = os.listdir(lp) if os.path.isdir(lp) else []
+                cfg_path = os.path.join(lp, "adapter_config.json")
+                cfg_data = {}
+                if os.path.exists(cfg_path):
+                    import json as _j
+                    with open(cfg_path) as _f:
+                        cfg_data = _j.load(_f)
+                lora_shapes = {}
+                st_path = os.path.join(lp, "adapter_model.safetensors")
+                if os.path.exists(st_path):
+                    from safetensors import safe_open
+                    with safe_open(st_path, framework="pt") as f:
+                        for key in sorted(f.keys())[:16]:
+                            lora_shapes[key] = list(f.get_tensor(key).shape)
+                diag["available_loras"][n] = {
+                    "path": lp, "source": info["source"], "files": files,
+                    "config": cfg_data, "sample_shapes": lora_shapes,
+                }
+
+            test_lora = job_input.get("test_lora", list(available.keys())[0] if available else None)
+            if test_lora and test_lora in available:
+                test_path = available[test_lora]["path"]
+                diag["test_results"] = {}
+                try:
+                    result = dit_handler.add_lora(test_path, adapter_name="test_diag")
+                    diag["test_results"]["add_lora"] = f"Result: {str(result)[:500]}"
+                    try:
+                        dit_handler.unload_lora()
+                    except:
+                        pass
+                except Exception as _e:
+                    diag["test_results"]["add_lora"] = f"FAILED: {str(_e)[:800]}"
+
+                try:
+                    from safetensors import safe_open
+                    st_path = os.path.join(test_path, "adapter_model.safetensors")
+                    mismatches = []
+                    with safe_open(st_path, framework="pt") as f:
+                        for key in f.keys():
+                            clean = key.replace("base_model.model.", "")
+                            parts = clean.rsplit(".", 2)
+                            module_path = parts[0] if len(parts) > 1 else clean
+                            parent_key = module_path + ".weight"
+                            lora_shape = list(f.get_tensor(key).shape)
+                            if parent_key in sd:
+                                model_shape = list(sd[parent_key].shape)
+                                if any(ls not in model_shape for ls in lora_shape if ls > 64):
+                                    mismatches.append({
+                                        "lora_key": key, "lora_shape": lora_shape,
+                                        "model_key": parent_key, "model_shape": model_shape,
+                                    })
+                    diag["dimension_mismatches"] = mismatches[:10]
+                    diag["total_mismatches"] = len(mismatches)
+                except Exception as _e:
+                    diag["dimension_check_error"] = str(_e)[:500]
+
             return diag
-
-        if not ensure_models_loaded():
-            return {"error": "Failed to initialize models. Check worker logs."}
-
-        lora_name = job_input.get("lora_name")
-        lora_scale = float(job_input.get("lora_scale", 1.0))
 
         if lora_name and lora_name != "none":
             lora_result = apply_lora(lora_name, lora_scale)
             if lora_result is not True:
-                return {"error": f"Failed to load LoRA '{lora_name}': {lora_result}"}
+                err_detail = lora_result if isinstance(lora_result, str) else "unknown"
+                return {"error": f"Failed to load LoRA: {lora_name}. Detail: {err_detail}. Available: {list(scan_available_loras().keys())}"}
         elif current_lora and (not lora_name or lora_name == "none"):
             apply_lora(None)
+
+        if mode == "hybrid":
+            return handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_format)
 
         prompt = job_input.get("prompt", "")
         lyrics = job_input.get("lyrics", "")
         duration = float(job_input.get("audio_duration", job_input.get("duration", -1)))
-        model_name = job_input.get("model", DEFAULT_MODEL)
-        audio_format = job_input.get("audio_format", "wav")
-        inference_steps = int(job_input.get("infer_step", DEFAULT_STEPS.get(model_name, 8)))
-        guidance_scale = float(job_input.get("guidance_scale", 15.0))
-        guidance_scale_text = float(job_input.get("guidance_scale_text", 0.0))
-        guidance_scale_lyric = float(job_input.get("guidance_scale_lyric", 0.0))
-        scheduler_type = job_input.get("scheduler_type", "euler")
-        cfg_type = job_input.get("cfg_type", "apg")
-        omega = float(job_input.get("omega", 10.0))
-        granularity = float(job_input.get("granularity", 100.0))
-        manual_seeds = job_input.get("manual_seeds", [-1])
+        task_type = job_input.get("task_type", "text2music")
+        seed = int(job_input.get("seed", -1))
+        default_steps = DEFAULT_STEPS.get(model_name, 8)
+        inference_steps = int(job_input.get("inference_steps", job_input.get("infer_step", default_steps)))
+        guidance_scale = float(job_input.get("guidance_scale", 7.0))
+        thinking = job_input.get("thinking", True)
+        batch_size = int(job_input.get("batch_size", 1))
+        bpm = job_input.get("bpm", None)
+        if bpm is not None:
+            bpm = int(bpm)
+        key_scale = job_input.get("key_scale", job_input.get("keyscale", ""))
+        time_signature = job_input.get("time_signature", job_input.get("timesignature", ""))
+        vocal_language = job_input.get("vocal_language", "unknown")
         instrumental = job_input.get("instrumental", False)
 
         lora_info = f", lora={lora_name}(x{lora_scale})" if lora_name and lora_name != "none" else ""
@@ -304,86 +567,89 @@ def handler_worker(job):
               f"duration={duration}s, steps={inference_steps}{lora_info}", flush=True)
 
         params = GenerationParams(
-            audio_duration=duration,
-            prompt=prompt,
+            caption=prompt,
             lyrics=lyrics,
-            infer_step=inference_steps,
+            duration=duration,
+            task_type=task_type,
+            seed=seed,
+            inference_steps=inference_steps,
             guidance_scale=guidance_scale,
-            guidance_scale_text=guidance_scale_text,
-            guidance_scale_lyric=guidance_scale_lyric,
-            scheduler_type=scheduler_type,
-            cfg_type=cfg_type,
-            omega=omega,
-            granularity=granularity,
-            manual_seeds=manual_seeds if isinstance(manual_seeds, list) else [manual_seeds],
-            guidance_interval=0.5,
-            guidance_interval_decay=0.0,
-            min_guidance_scale=3.0,
-            use_erg_tag=True,
-            use_erg_lyric=True,
-            use_erg_diffusion=True,
-            oss_steps=None,
+            thinking=thinking if llm_handler is not None else False,
+            bpm=bpm,
+            keyscale=key_scale,
+            timesignature=time_signature,
+            vocal_language=vocal_language,
             instrumental=instrumental,
         )
 
         config = GenerationConfig(
-            project_root=PROJECT_ROOT,
-            config_path=model_name,
-            seed=-1,
-            batch_size=1,
+            batch_size=batch_size,
+            use_random_seed=(seed < 0),
+            seeds=[seed] if seed >= 0 else None,
+            audio_format=audio_format if audio_format in ("mp3", "wav", "flac") else "mp3",
         )
 
-        gen_start = time.time()
-        results = generate_music(dit_handler, llm_handler, params, config)
-        gen_time = time.time() - gen_start
-        print(f"[ACE-Step] Generation done in {gen_time:.1f}s", flush=True)
+        save_dir = tempfile.mkdtemp(prefix="ace_step_")
 
-        if not results:
-            return {"error": "No results from generate_music"}
+        start = time.time()
+        result = generate_music(
+            dit_handler=dit_handler,
+            llm_handler=llm_handler,
+            params=params,
+            config=config,
+            save_dir=save_dir,
+        )
+        gen_time = time.time() - start
 
-        for audio_info in results:
-            if "audio_path" in audio_info and audio_info["audio_path"]:
-                audio_path = audio_info["audio_path"]
-                if os.path.exists(audio_path):
-                    with open(audio_path, "rb") as f:
-                        audio_data = f.read()
-                    audio_b64 = base64.b64encode(audio_data).decode("utf-8")
-                    return {
-                        "audio_base64": audio_b64,
-                        "format": audio_format,
-                        "duration": duration,
-                        "generation_time": round(gen_time, 2),
-                        "sample_rate": 48000,
-                        "model": model_name,
-                        "lora": lora_name if lora_name and lora_name != "none" else None,
-                        "handler_version": HANDLER_VERSION,
-                    }
+        if not result.success:
+            return {"error": result.error or "Generation failed", "status_message": result.status_message}
+
+        print(f"[ACE-Step] Done in {gen_time:.1f}s, {len(result.audios)} audio(s)", flush=True)
+
+        for i, audio_info in enumerate(result.audios):
+            audio_path = audio_info.get("path", "")
+            if audio_path and os.path.exists(audio_path):
+                with open(audio_path, "rb") as f:
+                    audio_bytes = f.read()
+                audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+                ext = os.path.splitext(audio_path)[1].lstrip(".") or audio_format
+                content_type_map = {"mp3": "audio/mpeg", "wav": "audio/wav", "flac": "audio/flac"}
+                return {
+                    "audio_base64": audio_b64,
+                    "content_type": content_type_map.get(ext, "audio/mpeg"),
+                    "filename": f"ace_step_{job['id'][:12]}_{i}.{ext}",
+                    "generation_time": round(gen_time, 1),
+                    "duration": duration,
+                    "sample_rate": 48000,
+                    "model": model_name,
+                    "lora": lora_name if lora_name and lora_name != "none" else None,
+                }
             elif "tensor" in audio_info and audio_info["tensor"] is not None:
                 import torchaudio
                 tensor = audio_info["tensor"]
                 sr = audio_info.get("sample_rate", 48000)
-                if tensor.dim() == 1:
-                    tensor = tensor.unsqueeze(0)
                 buf = io.BytesIO()
-                torchaudio.save(buf, tensor.cpu(), sr, format="wav")
+                torchaudio.save(buf, tensor.cpu(), sr, format=audio_format)
                 audio_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+                content_type_map = {"mp3": "audio/mpeg", "wav": "audio/wav", "flac": "audio/flac"}
                 return {
                     "audio_base64": audio_b64,
-                    "format": "wav",
+                    "content_type": content_type_map.get(audio_format, "audio/mpeg"),
+                    "filename": f"ace_step_{job['id'][:12]}_{i}.{audio_format}",
+                    "generation_time": round(gen_time, 1),
                     "duration": duration,
-                    "generation_time": round(gen_time, 2),
                     "sample_rate": sr,
                     "model": model_name,
                     "lora": lora_name if lora_name and lora_name != "none" else None,
-                    "handler_version": HANDLER_VERSION,
                 }
 
         return {"error": "No audio files generated"}
 
     except Exception as e:
+        print(f"[ACE-Step] Job error: {e}", flush=True)
         traceback.print_exc()
-        return {"error": f"{type(e).__name__}: {str(e)}", "handler_version": HANDLER_VERSION}
+        return {"error": str(e), "traceback": traceback.format_exc()[-2000:]}
 
 
-print(f"[ACE-Step] Handler ready (version={HANDLER_VERSION}), waiting for jobs...", flush=True)
-runpod.serverless.start({"handler": handler_worker})
+print("[ACE-Step] Worker starting (models will load on first request)...", flush=True)
+runpod.serverless.start({"handler": handler})
