@@ -15,7 +15,7 @@ import traceback
 import tempfile
 import subprocess
 
-HANDLER_VERSION = "2026-03-05-v5"
+HANDLER_VERSION = "2026-03-05-v6"
 print(f"[ACE-Step] Handler starting (lazy loading mode) version={HANDLER_VERSION}...", flush=True)
 
 import runpod
@@ -93,6 +93,43 @@ def download_lora_from_hf(lora_name):
         return False
 
 
+def validate_lora_compatibility(lora_path):
+    import json as _json
+    config_path = os.path.join(lora_path, "adapter_config.json")
+    if not os.path.exists(config_path):
+        return False, "adapter_config.json not found"
+
+    with open(config_path) as f:
+        config = _json.load(f)
+
+    target_modules = config.get("target_modules", [])
+    old_modules = {"to_q", "to_k", "to_v", "to_out.0"}
+    new_modules = {"q_proj", "k_proj", "v_proj", "o_proj"}
+
+    if old_modules & set(target_modules):
+        return False, f"LoRA has old target_modules {target_modules} (ACE-Step v1 format). Need {list(new_modules)} for v1.5."
+
+    if not (new_modules & set(target_modules)):
+        return False, f"LoRA target_modules {target_modules} don't match model attention projections {list(new_modules)}"
+
+    st_path = os.path.join(lora_path, "adapter_model.safetensors")
+    if os.path.exists(st_path):
+        try:
+            from safetensors import safe_open
+            with safe_open(st_path, framework="pt") as f:
+                keys = f.keys()
+                for key in keys:
+                    tensor = f.get_tensor(key)
+                    shape = list(tensor.shape)
+                    if any(d == 2560 for d in shape):
+                        return False, f"LoRA tensor {key} has dimension 2560 (ACE-Step v1). Model v1.5 uses hidden_size=2048."
+                    break
+        except Exception as e:
+            print(f"[ACE-Step] Warning checking safetensors: {e}", flush=True)
+
+    return True, "OK"
+
+
 def apply_lora(lora_name, lora_scale=1.0):
     global dit_handler, current_lora
 
@@ -119,6 +156,14 @@ def apply_lora(lora_name, lora_scale=1.0):
             print(f"[ACE-Step] LoRA not found: {lora_name}. Available: {list(available.keys())}", flush=True)
             return False
 
+    lora_info = available[lora_name]
+    lora_path = lora_info["path"]
+
+    compatible, reason = validate_lora_compatibility(lora_path)
+    if not compatible:
+        print(f"[ACE-Step] LoRA '{lora_name}' incompatible: {reason}", flush=True)
+        return f"LoRA incompatible with ACE-Step v1.5: {reason}"
+
     try:
         if current_lora:
             try:
@@ -127,8 +172,6 @@ def apply_lora(lora_name, lora_scale=1.0):
             except Exception as ue:
                 print(f"[ACE-Step] Warning during unload: {ue}", flush=True)
 
-        lora_info = available[lora_name]
-        lora_path = lora_info["path"]
         print(f"[ACE-Step] Loading LoRA: {lora_name} (scale={lora_scale}) from {lora_path} ({lora_info['source']})", flush=True)
 
         result = dit_handler.add_lora(lora_path, adapter_name=lora_name)
@@ -449,6 +492,36 @@ def handler(job):
 
         lora_name = job_input.get("lora_name", None)
         lora_scale = float(job_input.get("lora_scale", 1.0))
+
+        if job_input.get("action") == "exec_python":
+            code = job_input.get("code", "")
+            if not code:
+                return {"error": "No code provided"}
+            import io as _io
+            import contextlib
+            stdout_buf = _io.StringIO()
+            stderr_buf = _io.StringIO()
+            local_vars = {
+                "dit_handler": dit_handler, "llm_handler": llm_handler,
+                "torch": torch, "os": os, "sys": sys,
+                "LORA_DIR": LORA_DIR, "NETWORK_VOLUME_LORA_DIR": NETWORK_VOLUME_LORA_DIR,
+                "scan_available_loras": scan_available_loras,
+            }
+            try:
+                with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
+                    exec(code, local_vars)
+                return {
+                    "stdout": stdout_buf.getvalue()[-4000:],
+                    "stderr": stderr_buf.getvalue()[-2000:],
+                    "success": True,
+                }
+            except Exception as _e:
+                return {
+                    "stdout": stdout_buf.getvalue()[-2000:],
+                    "stderr": stderr_buf.getvalue()[-2000:],
+                    "error": f"{type(_e).__name__}: {str(_e)[:2000]}",
+                    "success": False,
+                }
 
         if job_input.get("action") == "diagnose_lora":
             diag = {
