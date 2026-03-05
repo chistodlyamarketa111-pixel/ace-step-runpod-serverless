@@ -15,7 +15,8 @@ import traceback
 import tempfile
 import subprocess
 
-print("[ACE-Step] Handler starting (lazy loading mode)...", flush=True)
+HANDLER_VERSION = "2026-03-05-v3"
+print(f"[ACE-Step] Handler starting (lazy loading mode) version={HANDLER_VERSION}...", flush=True)
 
 import runpod
 import torch
