@@ -121,105 +121,34 @@ def apply_lora(lora_name, lora_scale=1.0):
     try:
         if current_lora:
             try:
-                dit_handler.unload_lora()
-            except Exception:
-                try:
-                    import peft
-                    model = dit_handler.dit.model if hasattr(dit_handler.dit, 'model') else dit_handler.dit
-                    if hasattr(model, 'disable_adapters'):
-                        model.disable_adapters()
-                    if hasattr(model, 'delete_adapter'):
-                        model.delete_adapter('default')
-                except Exception:
-                    pass
-            print(f"[ACE-Step] Unloaded previous LoRA: {current_lora}", flush=True)
+                result = dit_handler.unload_lora()
+                print(f"[ACE-Step] Unloaded previous LoRA: {current_lora} -> {result}", flush=True)
+            except Exception as ue:
+                print(f"[ACE-Step] Warning during unload: {ue}", flush=True)
 
         lora_info = available[lora_name]
         lora_path = lora_info["path"]
         print(f"[ACE-Step] Loading LoRA: {lora_name} (scale={lora_scale}) from {lora_path} ({lora_info['source']})", flush=True)
 
-        import json as _json
-        config_path = os.path.join(lora_path, "adapter_config.json")
-        peft_type = "LORA"
-        if os.path.exists(config_path):
-            with open(config_path) as f:
-                cfg = _json.load(f)
-                peft_type = cfg.get("peft_type", "LORA")
-            print(f"[ACE-Step] Adapter type: {peft_type}", flush=True)
+        result = dit_handler.add_lora(lora_path, adapter_name=lora_name)
+        print(f"[ACE-Step] add_lora result: {result}", flush=True)
 
-        print(f"[ACE-Step] dit_handler type: {type(dit_handler)}", flush=True)
-        print(f"[ACE-Step] dit_handler.dit type: {type(dit_handler.dit)}", flush=True)
-        print(f"[ACE-Step] dit_handler.dit has 'model': {hasattr(dit_handler.dit, 'model')}", flush=True)
-        print(f"[ACE-Step] dit_handler methods: {[m for m in dir(dit_handler) if 'lora' in m.lower()]}", flush=True)
+        if isinstance(result, str) and result.startswith("❌"):
+            return f"add_lora error: {result}"
 
-        if peft_type in ("LOKR", "LOHA", "IA3", "OFT"):
-            from peft import PeftModel
-            base_model = dit_handler.dit
-            print(f"[ACE-Step] Trying PeftModel.from_pretrained on {type(base_model)}", flush=True)
-            try:
-                dit_handler.dit = PeftModel.from_pretrained(base_model, lora_path, adapter_name="default")
-                if hasattr(dit_handler.dit, 'set_adapter'):
-                    dit_handler.dit.set_adapter("default")
-                print(f"[ACE-Step] Loaded {peft_type} adapter via PeftModel on dit directly", flush=True)
-            except Exception as e1:
-                print(f"[ACE-Step] PeftModel on dit failed: {e1}", flush=True)
-                if hasattr(base_model, 'model'):
-                    print(f"[ACE-Step] Trying on dit.model ({type(base_model.model)})", flush=True)
-                    dit_handler.dit = PeftModel.from_pretrained(base_model.model, lora_path, adapter_name="default")
-                    if hasattr(dit_handler.dit, 'set_adapter'):
-                        dit_handler.dit.set_adapter("default")
-                    print(f"[ACE-Step] Loaded {peft_type} via PeftModel on dit.model", flush=True)
-                else:
-                    raise
-        else:
-            methods_tried = []
-            loaded = False
-            if hasattr(dit_handler, 'load_lora'):
-                try:
-                    dit_handler.load_lora(lora_path=lora_path, lora_scale=lora_scale)
-                    print(f"[ACE-Step] Loaded via load_lora", flush=True)
-                    loaded = True
-                except Exception as e_load:
-                    methods_tried.append(f"load_lora: {e_load}")
-                    print(f"[ACE-Step] load_lora failed: {e_load}", flush=True)
-            if not loaded and hasattr(dit_handler, 'add_lora'):
-                try:
-                    result = dit_handler.add_lora(lora_path, adapter_name=lora_name)
-                    print(f"[ACE-Step] add_lora result: {result}", flush=True)
-                    if isinstance(result, str) and result.startswith("❌"):
-                        raise RuntimeError(f"add_lora returned error: {result}")
-                    loaded = True
-                except Exception as e_add:
-                    methods_tried.append(f"add_lora: {e_add}")
-                    print(f"[ACE-Step] add_lora failed: {e_add}", flush=True)
-            if not loaded:
-                print(f"[ACE-Step] All native methods failed: {methods_tried}. Trying PeftModel fallback...", flush=True)
-                from peft import PeftModel
-                base_model = dit_handler.dit
-                try:
-                    dit_handler.dit = PeftModel.from_pretrained(base_model, lora_path, adapter_name="default")
-                except Exception:
-                    if hasattr(base_model, 'model'):
-                        dit_handler.dit = PeftModel.from_pretrained(base_model.model, lora_path, adapter_name="default")
-                    else:
-                        raise
-                if hasattr(dit_handler.dit, 'set_adapter'):
-                    dit_handler.dit.set_adapter("default")
-                print(f"[ACE-Step] Loaded LORA via PeftModel fallback", flush=True)
+        if lora_scale != 1.0 and hasattr(dit_handler, 'set_lora_scale'):
+            dit_handler.set_lora_scale(lora_name, lora_scale)
+            print(f"[ACE-Step] Set LoRA scale: {lora_scale}", flush=True)
 
         current_lora = lora_name
         print(f"[ACE-Step] LoRA loaded successfully: {lora_name}", flush=True)
         return True
     except Exception as e:
-        print(f"[ACE-Step] Error loading LoRA {lora_name}: {e}", flush=True)
+        err_msg = f"{type(e).__name__}: {str(e)[:1000]}"
+        print(f"[ACE-Step] Error loading LoRA {lora_name}: {err_msg}", flush=True)
         traceback.print_exc()
         current_lora = None
-        import shutil
-        cached_path = os.path.join(NETWORK_VOLUME_LORA_DIR, lora_name)
-        if os.path.exists(cached_path):
-            print(f"[ACE-Step] Removing cached LoRA and re-downloading: {cached_path}", flush=True)
-            shutil.rmtree(cached_path, ignore_errors=True)
-        return False
+        return err_msg
 
 
 def ensure_models_loaded():
@@ -520,9 +449,50 @@ def handler(job):
         lora_name = job_input.get("lora_name", None)
         lora_scale = float(job_input.get("lora_scale", 1.0))
 
+        if job_input.get("action") == "diagnose_lora":
+            diag = {"dit_type": str(type(dit_handler.dit)), "dit_class": dit_handler.dit.__class__.__name__}
+            diag["has_model"] = hasattr(dit_handler.dit, "model")
+            if diag["has_model"]:
+                diag["model_type"] = str(type(dit_handler.dit.model))
+            diag["lora_methods"] = [m for m in dir(dit_handler) if "lora" in m.lower()]
+            for mname in ["load_lora", "add_lora", "unload_lora"]:
+                diag[f"has_{mname}"] = hasattr(dit_handler, mname)
+                if hasattr(dit_handler, mname):
+                    import inspect as _insp
+                    diag[f"sig_{mname}"] = str(_insp.signature(getattr(dit_handler, mname)))
+            available = scan_available_loras()
+            diag["available_loras"] = {}
+            for n, info in available.items():
+                lp = info["path"]
+                files = os.listdir(lp) if os.path.isdir(lp) else []
+                cfg_path = os.path.join(lp, "adapter_config.json")
+                cfg_data = {}
+                if os.path.exists(cfg_path):
+                    import json as _j
+                    with open(cfg_path) as _f:
+                        cfg_data = _j.load(_f)
+                diag["available_loras"][n] = {"path": lp, "source": info["source"], "files": files, "config": cfg_data}
+            test_lora = job_input.get("test_lora", list(available.keys())[0] if available else None)
+            if test_lora and test_lora in available:
+                test_path = available[test_lora]["path"]
+                diag["test_results"] = {}
+                for method_name, method_fn in [
+                    ("PeftModel_on_dit", lambda: __import__("peft").PeftModel.from_pretrained(dit_handler.dit, test_path, adapter_name="test")),
+                    ("load_lora", lambda: dit_handler.load_lora(lora_path=test_path, lora_scale=1.0) if hasattr(dit_handler, "load_lora") else "NOT_AVAILABLE"),
+                    ("add_lora", lambda: dit_handler.add_lora(test_path, adapter_name="test") if hasattr(dit_handler, "add_lora") else "NOT_AVAILABLE"),
+                ]:
+                    try:
+                        result = method_fn()
+                        diag["test_results"][method_name] = f"SUCCESS: {type(result).__name__ if result != 'NOT_AVAILABLE' else 'NOT_AVAILABLE'}"
+                    except Exception as _e:
+                        diag["test_results"][method_name] = f"FAILED: {str(_e)[:500]}"
+            return diag
+
         if lora_name and lora_name != "none":
-            if not apply_lora(lora_name, lora_scale):
-                return {"error": f"Failed to load LoRA: {lora_name}. Available: {list(scan_available_loras().keys())}"}
+            lora_result = apply_lora(lora_name, lora_scale)
+            if lora_result is not True:
+                err_detail = lora_result if isinstance(lora_result, str) else "unknown"
+                return {"error": f"Failed to load LoRA: {lora_name}. Detail: {err_detail}. Available: {list(scan_available_loras().keys())}"}
         elif current_lora and (not lora_name or lora_name == "none"):
             apply_lora(None)
 
