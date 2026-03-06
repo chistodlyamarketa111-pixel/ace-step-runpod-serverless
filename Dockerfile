@@ -42,7 +42,9 @@ RUN uv pip install --system --no-cache-dir \
     huggingface_hub \
     torch \
     torchaudio \
-    demucs
+    demucs \
+    pedalboard \
+    pyloudnorm
 
 RUN uv pip install --system --no-cache-dir ./acestep/third_parts/nano-vllm || true
 
@@ -61,9 +63,6 @@ ENV ACESTEP_CHECKPOINT_DIR=/app/checkpoints
 ENV ACESTEP_LORA_DIR=/app/loras
 
 RUN mkdir -p /app/loras
-
-RUN python -c "from huggingface_hub import snapshot_download; \
-    snapshot_download('ruslanmusinrusmus/russianpop', local_dir='/app/loras/russianpop')" || true
 
 WORKDIR /app
 
