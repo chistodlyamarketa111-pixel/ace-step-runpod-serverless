@@ -15,7 +15,7 @@ import traceback
 import tempfile
 import subprocess
 
-HANDLER_VERSION = "2026-03-06-v8-mastering"
+HANDLER_VERSION = "2026-03-06-v8-mastering-r2"
 print(f"[ACE-Step] Handler starting (lazy loading mode) version={HANDLER_VERSION}...", flush=True)
 
 import runpod
