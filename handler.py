@@ -471,6 +471,19 @@ def generate_single(job_input, job_id, override_params=None):
     return None, "No audio generated"
 
 
+def _reencode_file(filepath, do_mastering, audio_format="mp3"):
+    import torchaudio
+    wav, sr = torchaudio.load(filepath)
+    if do_mastering:
+        wav = master_audio(wav, sr)
+    buf = io.BytesIO()
+    if audio_format == "mp3":
+        torchaudio.save(buf, wav, sr, format="mp3", compression=-2)
+    else:
+        torchaudio.save(buf, wav, sr, format=audio_format)
+    return base64.b64encode(buf.getvalue()).decode("utf-8"), sr
+
+
 def handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_format, do_mastering=True):
     start = time.time()
     vocal_volume = float(job_input.get("vocal_volume", 1.0))
@@ -497,8 +510,7 @@ def handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_forma
         print(f"[ACE-Step] Vocals separated: shape={vocals_tensor.shape}, sr={vocals_sr}", flush=True)
     except Exception as e:
         print(f"[ACE-Step] Vocal separation failed: {e}. Returning full track instead.", flush=True)
-        with open(full_path, "rb") as f:
-            audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+        audio_b64, actual_sr = _reencode_file(full_path, do_mastering, audio_format)
         gen_time = time.time() - start
         return {
             "audio_base64": audio_b64,
@@ -506,11 +518,12 @@ def handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_forma
             "filename": f"ace_step_hybrid_{job['id'][:12]}.mp3",
             "generation_time": round(gen_time, 1),
             "duration": float(job_input.get("audio_duration", job_input.get("duration", -1))),
-            "sample_rate": 44100,
+            "sample_rate": actual_sr,
             "model": model_name,
             "lora": lora_name if lora_name and lora_name != "none" else None,
             "mode": "hybrid",
             "hybrid_status": "fallback_no_demucs",
+            "mastered": do_mastering,
         }
 
     print("[ACE-Step] Step 4/4: Mixing vocals + clean instrumental...", flush=True)
@@ -520,8 +533,7 @@ def handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_forma
         mix_audio(vocals_tensor, vocals_sr, inst_path, mix_path, vocal_volume, instrumental_volume, do_mastering=do_mastering)
     except Exception as e:
         print(f"[ACE-Step] Mix failed: {e}. Returning full track.", flush=True)
-        with open(full_path, "rb") as f:
-            audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+        audio_b64, actual_sr = _reencode_file(full_path, do_mastering, audio_format)
         gen_time = time.time() - start
         return {
             "audio_base64": audio_b64,
@@ -529,11 +541,12 @@ def handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_forma
             "filename": f"ace_step_hybrid_{job['id'][:12]}.mp3",
             "generation_time": round(gen_time, 1),
             "duration": float(job_input.get("audio_duration", job_input.get("duration", -1))),
-            "sample_rate": 44100,
+            "sample_rate": actual_sr,
             "model": model_name,
             "lora": lora_name if lora_name and lora_name != "none" else None,
             "mode": "hybrid",
             "hybrid_status": "fallback_mix_failed",
+            "mastered": do_mastering,
         }
 
     gen_time = time.time() - start
@@ -547,11 +560,12 @@ def handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_forma
         "filename": f"ace_step_hybrid_{job['id'][:12]}.mp3",
         "generation_time": round(gen_time, 1),
         "duration": float(job_input.get("audio_duration", job_input.get("duration", -1))),
-        "sample_rate": 44100,
+        "sample_rate": vocals_sr,
         "model": model_name,
         "lora": lora_name if lora_name and lora_name != "none" else None,
         "mode": "hybrid",
         "hybrid_status": "success",
+        "mastered": do_mastering,
     }
 
 
