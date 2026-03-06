@@ -66,7 +66,7 @@ RUN mkdir -p /app/loras
 
 WORKDIR /app
 
-ARG CACHE_BUST=1
+# Force rebuild: v8-mastering-r2
 COPY handler.py /app/handler.py
 COPY test_input.json /app/test_input.json
 
