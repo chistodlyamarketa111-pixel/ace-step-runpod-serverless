@@ -15,7 +15,7 @@ import traceback
 import tempfile
 import subprocess
 
-HANDLER_VERSION = "2026-03-05-v3"
+HANDLER_VERSION = "2026-03-06-v7"
 print(f"[ACE-Step] Handler starting (lazy loading mode) version={HANDLER_VERSION}...", flush=True)
 
 import runpod
@@ -68,33 +68,89 @@ def scan_available_loras():
 HF_LORA_REPO_PREFIX = os.environ.get("HF_LORA_REPO_PREFIX", "ruslanmusinrusmus")
 
 
-def download_lora_from_hf(lora_name):
+def _sanitize_revision(revision):
+    import re
+    if not revision:
+        return None
+    sanitized = re.sub(r'[^a-zA-Z0-9_\-.]', '_', revision)
+    if '..' in sanitized or sanitized.startswith('.'):
+        return None
+    return sanitized
+
+
+def download_lora_from_hf(lora_name, revision=None):
+    rev_str = f" (revision={revision})" if revision else ""
+    safe_rev = _sanitize_revision(revision) if revision else None
     try:
         from huggingface_hub import snapshot_download
         repo_id = f"{HF_LORA_REPO_PREFIX}/{lora_name}"
-        target_dir = os.path.join(NETWORK_VOLUME_LORA_DIR, lora_name)
+        dir_name = f"{lora_name}_{safe_rev}" if safe_rev else lora_name
+        target_dir = os.path.join(NETWORK_VOLUME_LORA_DIR, dir_name)
         os.makedirs(NETWORK_VOLUME_LORA_DIR, exist_ok=True)
-        print(f"[ACE-Step] Downloading LoRA from HuggingFace: {repo_id} -> {target_dir}", flush=True)
-        snapshot_download(
-            repo_id=repo_id,
-            local_dir=target_dir,
-            ignore_patterns=["*.md", ".gitattributes"],
-        )
+        print(f"[ACE-Step] Downloading LoRA from HuggingFace: {repo_id}{rev_str} -> {target_dir}", flush=True)
+        dl_kwargs = {
+            "repo_id": repo_id,
+            "local_dir": target_dir,
+            "ignore_patterns": ["*.md", ".gitattributes"],
+        }
+        if revision:
+            dl_kwargs["revision"] = revision
+        snapshot_download(**dl_kwargs)
         config_file = os.path.join(target_dir, "adapter_config.json")
         safetensors = os.path.join(target_dir, "adapter_model.safetensors")
         bin_file = os.path.join(target_dir, "adapter_model.bin")
         if os.path.exists(config_file) and (os.path.exists(safetensors) or os.path.exists(bin_file)):
-            print(f"[ACE-Step] LoRA downloaded successfully: {lora_name}", flush=True)
-            return True
-        print(f"[ACE-Step] Downloaded repo missing adapter files: {lora_name}", flush=True)
-        return False
+            print(f"[ACE-Step] LoRA downloaded successfully: {dir_name}", flush=True)
+            return dir_name
+        print(f"[ACE-Step] Downloaded repo missing adapter files: {dir_name}", flush=True)
+        return None
     except Exception as e:
-        print(f"[ACE-Step] Failed to download LoRA {lora_name} from HF: {e}", flush=True)
-        return False
+        print(f"[ACE-Step] Failed to download LoRA {lora_name}{rev_str} from HF: {e}", flush=True)
+        return None
 
 
-def apply_lora(lora_name, lora_scale=1.0):
+def validate_lora_compatibility(lora_path):
+    import json as _json
+    config_path = os.path.join(lora_path, "adapter_config.json")
+    if not os.path.exists(config_path):
+        return False, "adapter_config.json not found"
+
+    with open(config_path) as f:
+        config = _json.load(f)
+
+    target_modules = config.get("target_modules", [])
+    old_modules = {"to_q", "to_k", "to_v", "to_out.0"}
+    new_modules = {"q_proj", "k_proj", "v_proj", "o_proj"}
+
+    if old_modules & set(target_modules):
+        return False, f"LoRA has old target_modules {target_modules} (ACE-Step v1 format). Need {list(new_modules)} for v1.5."
+
+    if not (new_modules & set(target_modules)):
+        return False, f"LoRA target_modules {target_modules} don't match model attention projections {list(new_modules)}"
+
+    st_path = os.path.join(lora_path, "adapter_model.safetensors")
+    if os.path.exists(st_path):
+        try:
+            from safetensors import safe_open
+            with safe_open(st_path, framework="pt") as f:
+                keys = f.keys()
+                for key in keys:
+                    tensor = f.get_tensor(key)
+                    shape = list(tensor.shape)
+                    if any(d == 2560 for d in shape):
+                        return False, f"LoRA tensor {key} has dimension 2560 (ACE-Step v1). Model v1.5 uses hidden_size=2048."
+                    break
+        except Exception as e:
+            print(f"[ACE-Step] Warning checking safetensors: {e}", flush=True)
+
+    return True, "OK"
+
+
+def apply_lora(lora_name, lora_scale=1.0, lora_revision=None):
     global dit_handler, current_lora
+
+    safe_rev = _sanitize_revision(lora_revision) if lora_revision else None
+    effective_name = f"{lora_name}_{safe_rev}" if safe_rev else lora_name
 
     if not lora_name or lora_name == "none":
         if current_lora:
@@ -106,18 +162,27 @@ def apply_lora(lora_name, lora_scale=1.0):
                 print(f"[ACE-Step] Error unloading LoRA: {e}", flush=True)
         return True
 
-    if current_lora == lora_name:
-        print(f"[ACE-Step] LoRA already loaded: {lora_name}", flush=True)
+    if current_lora == effective_name:
+        print(f"[ACE-Step] LoRA already loaded: {effective_name}", flush=True)
         return True
 
     available = scan_available_loras()
-    if lora_name not in available:
-        print(f"[ACE-Step] LoRA not found locally: {lora_name}. Trying HuggingFace download...", flush=True)
-        if download_lora_from_hf(lora_name):
+    if effective_name not in available:
+        print(f"[ACE-Step] LoRA not found locally: {effective_name}. Trying HuggingFace download...", flush=True)
+        downloaded_name = download_lora_from_hf(lora_name, revision=lora_revision)
+        if downloaded_name:
             available = scan_available_loras()
-        if lora_name not in available:
-            print(f"[ACE-Step] LoRA not found: {lora_name}. Available: {list(available.keys())}", flush=True)
+        if effective_name not in available:
+            print(f"[ACE-Step] LoRA not found: {effective_name}. Available: {list(available.keys())}", flush=True)
             return False
+
+    lora_info = available[effective_name]
+    lora_path = lora_info["path"]
+
+    compatible, reason = validate_lora_compatibility(lora_path)
+    if not compatible:
+        print(f"[ACE-Step] LoRA '{effective_name}' incompatible: {reason}", flush=True)
+        return f"LoRA incompatible with ACE-Step v1.5: {reason}"
 
     try:
         if current_lora:
@@ -127,26 +192,24 @@ def apply_lora(lora_name, lora_scale=1.0):
             except Exception as ue:
                 print(f"[ACE-Step] Warning during unload: {ue}", flush=True)
 
-        lora_info = available[lora_name]
-        lora_path = lora_info["path"]
-        print(f"[ACE-Step] Loading LoRA: {lora_name} (scale={lora_scale}) from {lora_path} ({lora_info['source']})", flush=True)
+        print(f"[ACE-Step] Loading LoRA: {effective_name} (scale={lora_scale}) from {lora_path} ({lora_info['source']})", flush=True)
 
-        result = dit_handler.add_lora(lora_path, adapter_name=lora_name)
+        result = dit_handler.add_lora(lora_path, adapter_name=effective_name)
         print(f"[ACE-Step] add_lora result: {result}", flush=True)
 
         if isinstance(result, str) and result.startswith("❌"):
             return f"add_lora error: {result}"
 
         if lora_scale != 1.0 and hasattr(dit_handler, 'set_lora_scale'):
-            dit_handler.set_lora_scale(lora_name, lora_scale)
+            dit_handler.set_lora_scale(effective_name, lora_scale)
             print(f"[ACE-Step] Set LoRA scale: {lora_scale}", flush=True)
 
-        current_lora = lora_name
-        print(f"[ACE-Step] LoRA loaded successfully: {lora_name}", flush=True)
+        current_lora = effective_name
+        print(f"[ACE-Step] LoRA loaded successfully: {effective_name}", flush=True)
         return True
     except Exception as e:
         err_msg = f"{type(e).__name__}: {str(e)[:1000]}"
-        print(f"[ACE-Step] Error loading LoRA {lora_name}: {err_msg}", flush=True)
+        print(f"[ACE-Step] Error loading LoRA {effective_name}: {err_msg}", flush=True)
         traceback.print_exc()
         current_lora = None
         return err_msg
@@ -449,18 +512,59 @@ def handler(job):
 
         lora_name = job_input.get("lora_name", None)
         lora_scale = float(job_input.get("lora_scale", 1.0))
+        lora_revision = job_input.get("lora_revision", None)
+
+        if job_input.get("action") == "exec_python":
+            code = job_input.get("code", "")
+            if not code:
+                return {"error": "No code provided"}
+            import io as _io
+            import contextlib
+            stdout_buf = _io.StringIO()
+            stderr_buf = _io.StringIO()
+            local_vars = {
+                "dit_handler": dit_handler, "llm_handler": llm_handler,
+                "torch": torch, "os": os, "sys": sys,
+                "LORA_DIR": LORA_DIR, "NETWORK_VOLUME_LORA_DIR": NETWORK_VOLUME_LORA_DIR,
+                "scan_available_loras": scan_available_loras,
+            }
+            try:
+                with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
+                    exec(code, local_vars)
+                return {
+                    "stdout": stdout_buf.getvalue()[-4000:],
+                    "stderr": stderr_buf.getvalue()[-2000:],
+                    "success": True,
+                }
+            except Exception as _e:
+                return {
+                    "stdout": stdout_buf.getvalue()[-2000:],
+                    "stderr": stderr_buf.getvalue()[-2000:],
+                    "error": f"{type(_e).__name__}: {str(_e)[:2000]}",
+                    "success": False,
+                }
 
         if job_input.get("action") == "diagnose_lora":
-            diag = {"dit_type": str(type(dit_handler.dit)), "dit_class": dit_handler.dit.__class__.__name__}
-            diag["has_model"] = hasattr(dit_handler.dit, "model")
-            if diag["has_model"]:
-                diag["model_type"] = str(type(dit_handler.dit.model))
+            diag = {
+                "handler_version": HANDLER_VERSION,
+                "dit_type": str(type(dit_handler.dit)),
+                "dit_class": dit_handler.dit.__class__.__name__,
+            }
             diag["lora_methods"] = [m for m in dir(dit_handler) if "lora" in m.lower()]
             for mname in ["load_lora", "add_lora", "unload_lora"]:
                 diag[f"has_{mname}"] = hasattr(dit_handler, mname)
-                if hasattr(dit_handler, mname):
-                    import inspect as _insp
-                    diag[f"sig_{mname}"] = str(_insp.signature(getattr(dit_handler, mname)))
+
+            model_obj = dit_handler.dit
+            sd = model_obj.state_dict()
+            attn_shapes = {}
+            for k, v in sd.items():
+                if any(proj in k for proj in ["q_proj", "k_proj", "v_proj", "o_proj"]):
+                    if "weight" in k and "lora" not in k:
+                        attn_shapes[k] = list(v.shape)
+            sample_keys = sorted(attn_shapes.keys())[:16]
+            diag["model_attn_shapes"] = {k: attn_shapes[k] for k in sample_keys}
+            diag["model_total_params"] = sum(p.numel() for p in model_obj.parameters())
+
             available = scan_available_loras()
             diag["available_loras"] = {}
             for n, info in available.items():
@@ -472,28 +576,63 @@ def handler(job):
                     import json as _j
                     with open(cfg_path) as _f:
                         cfg_data = _j.load(_f)
-                diag["available_loras"][n] = {"path": lp, "source": info["source"], "files": files, "config": cfg_data}
+                lora_shapes = {}
+                st_path = os.path.join(lp, "adapter_model.safetensors")
+                if os.path.exists(st_path):
+                    from safetensors import safe_open
+                    with safe_open(st_path, framework="pt") as f:
+                        for key in sorted(f.keys())[:16]:
+                            lora_shapes[key] = list(f.get_tensor(key).shape)
+                diag["available_loras"][n] = {
+                    "path": lp, "source": info["source"], "files": files,
+                    "config": cfg_data, "sample_shapes": lora_shapes,
+                }
+
             test_lora = job_input.get("test_lora", list(available.keys())[0] if available else None)
             if test_lora and test_lora in available:
                 test_path = available[test_lora]["path"]
                 diag["test_results"] = {}
-                for method_name, method_fn in [
-                    ("PeftModel_on_dit", lambda: __import__("peft").PeftModel.from_pretrained(dit_handler.dit, test_path, adapter_name="test")),
-                    ("load_lora", lambda: dit_handler.load_lora(lora_path=test_path, lora_scale=1.0) if hasattr(dit_handler, "load_lora") else "NOT_AVAILABLE"),
-                    ("add_lora", lambda: dit_handler.add_lora(test_path, adapter_name="test") if hasattr(dit_handler, "add_lora") else "NOT_AVAILABLE"),
-                ]:
+                try:
+                    result = dit_handler.add_lora(test_path, adapter_name="test_diag")
+                    diag["test_results"]["add_lora"] = f"Result: {str(result)[:500]}"
                     try:
-                        result = method_fn()
-                        diag["test_results"][method_name] = f"SUCCESS: {type(result).__name__ if result != 'NOT_AVAILABLE' else 'NOT_AVAILABLE'}"
-                    except Exception as _e:
-                        diag["test_results"][method_name] = f"FAILED: {str(_e)[:500]}"
+                        dit_handler.unload_lora()
+                    except:
+                        pass
+                except Exception as _e:
+                    diag["test_results"]["add_lora"] = f"FAILED: {str(_e)[:800]}"
+
+                try:
+                    from safetensors import safe_open
+                    st_path = os.path.join(test_path, "adapter_model.safetensors")
+                    mismatches = []
+                    with safe_open(st_path, framework="pt") as f:
+                        for key in f.keys():
+                            clean = key.replace("base_model.model.", "")
+                            parts = clean.rsplit(".", 2)
+                            module_path = parts[0] if len(parts) > 1 else clean
+                            parent_key = module_path + ".weight"
+                            lora_shape = list(f.get_tensor(key).shape)
+                            if parent_key in sd:
+                                model_shape = list(sd[parent_key].shape)
+                                if any(ls not in model_shape for ls in lora_shape if ls > 64):
+                                    mismatches.append({
+                                        "lora_key": key, "lora_shape": lora_shape,
+                                        "model_key": parent_key, "model_shape": model_shape,
+                                    })
+                    diag["dimension_mismatches"] = mismatches[:10]
+                    diag["total_mismatches"] = len(mismatches)
+                except Exception as _e:
+                    diag["dimension_check_error"] = str(_e)[:500]
+
             return diag
 
         if lora_name and lora_name != "none":
-            lora_result = apply_lora(lora_name, lora_scale)
+            lora_result = apply_lora(lora_name, lora_scale, lora_revision=lora_revision)
             if lora_result is not True:
                 err_detail = lora_result if isinstance(lora_result, str) else "unknown"
-                return {"error": f"Failed to load LoRA: {lora_name}. Detail: {err_detail}. Available: {list(scan_available_loras().keys())}"}
+                effective = f"{lora_name}_{lora_revision}" if lora_revision else lora_name
+                return {"error": f"Failed to load LoRA: {effective}. Detail: {err_detail}. Available: {list(scan_available_loras().keys())}"}
         elif current_lora and (not lora_name or lora_name == "none"):
             apply_lora(None)
 
