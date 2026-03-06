@@ -15,7 +15,7 @@ import traceback
 import tempfile
 import subprocess
 
-HANDLER_VERSION = "2026-03-05-v6"
+HANDLER_VERSION = "2026-03-06-v7"
 print(f"[ACE-Step] Handler starting (lazy loading mode) version={HANDLER_VERSION}...", flush=True)
 
 import runpod
@@ -68,29 +68,45 @@ def scan_available_loras():
 HF_LORA_REPO_PREFIX = os.environ.get("HF_LORA_REPO_PREFIX", "ruslanmusinrusmus")
 
 
-def download_lora_from_hf(lora_name):
+def _sanitize_revision(revision):
+    import re
+    if not revision:
+        return None
+    sanitized = re.sub(r'[^a-zA-Z0-9_\-.]', '_', revision)
+    if '..' in sanitized or sanitized.startswith('.'):
+        return None
+    return sanitized
+
+
+def download_lora_from_hf(lora_name, revision=None):
+    rev_str = f" (revision={revision})" if revision else ""
+    safe_rev = _sanitize_revision(revision) if revision else None
     try:
         from huggingface_hub import snapshot_download
         repo_id = f"{HF_LORA_REPO_PREFIX}/{lora_name}"
-        target_dir = os.path.join(NETWORK_VOLUME_LORA_DIR, lora_name)
+        dir_name = f"{lora_name}_{safe_rev}" if safe_rev else lora_name
+        target_dir = os.path.join(NETWORK_VOLUME_LORA_DIR, dir_name)
         os.makedirs(NETWORK_VOLUME_LORA_DIR, exist_ok=True)
-        print(f"[ACE-Step] Downloading LoRA from HuggingFace: {repo_id} -> {target_dir}", flush=True)
-        snapshot_download(
-            repo_id=repo_id,
-            local_dir=target_dir,
-            ignore_patterns=["*.md", ".gitattributes"],
-        )
+        print(f"[ACE-Step] Downloading LoRA from HuggingFace: {repo_id}{rev_str} -> {target_dir}", flush=True)
+        dl_kwargs = {
+            "repo_id": repo_id,
+            "local_dir": target_dir,
+            "ignore_patterns": ["*.md", ".gitattributes"],
+        }
+        if revision:
+            dl_kwargs["revision"] = revision
+        snapshot_download(**dl_kwargs)
         config_file = os.path.join(target_dir, "adapter_config.json")
         safetensors = os.path.join(target_dir, "adapter_model.safetensors")
         bin_file = os.path.join(target_dir, "adapter_model.bin")
         if os.path.exists(config_file) and (os.path.exists(safetensors) or os.path.exists(bin_file)):
-            print(f"[ACE-Step] LoRA downloaded successfully: {lora_name}", flush=True)
-            return True
-        print(f"[ACE-Step] Downloaded repo missing adapter files: {lora_name}", flush=True)
-        return False
+            print(f"[ACE-Step] LoRA downloaded successfully: {dir_name}", flush=True)
+            return dir_name
+        print(f"[ACE-Step] Downloaded repo missing adapter files: {dir_name}", flush=True)
+        return None
     except Exception as e:
-        print(f"[ACE-Step] Failed to download LoRA {lora_name} from HF: {e}", flush=True)
-        return False
+        print(f"[ACE-Step] Failed to download LoRA {lora_name}{rev_str} from HF: {e}", flush=True)
+        return None
 
 
 def validate_lora_compatibility(lora_path):
@@ -130,8 +146,11 @@ def validate_lora_compatibility(lora_path):
     return True, "OK"
 
 
-def apply_lora(lora_name, lora_scale=1.0):
+def apply_lora(lora_name, lora_scale=1.0, lora_revision=None):
     global dit_handler, current_lora
+
+    safe_rev = _sanitize_revision(lora_revision) if lora_revision else None
+    effective_name = f"{lora_name}_{safe_rev}" if safe_rev else lora_name
 
     if not lora_name or lora_name == "none":
         if current_lora:
@@ -143,25 +162,26 @@ def apply_lora(lora_name, lora_scale=1.0):
                 print(f"[ACE-Step] Error unloading LoRA: {e}", flush=True)
         return True
 
-    if current_lora == lora_name:
-        print(f"[ACE-Step] LoRA already loaded: {lora_name}", flush=True)
+    if current_lora == effective_name:
+        print(f"[ACE-Step] LoRA already loaded: {effective_name}", flush=True)
         return True
 
     available = scan_available_loras()
-    if lora_name not in available:
-        print(f"[ACE-Step] LoRA not found locally: {lora_name}. Trying HuggingFace download...", flush=True)
-        if download_lora_from_hf(lora_name):
+    if effective_name not in available:
+        print(f"[ACE-Step] LoRA not found locally: {effective_name}. Trying HuggingFace download...", flush=True)
+        downloaded_name = download_lora_from_hf(lora_name, revision=lora_revision)
+        if downloaded_name:
             available = scan_available_loras()
-        if lora_name not in available:
-            print(f"[ACE-Step] LoRA not found: {lora_name}. Available: {list(available.keys())}", flush=True)
+        if effective_name not in available:
+            print(f"[ACE-Step] LoRA not found: {effective_name}. Available: {list(available.keys())}", flush=True)
             return False
 
-    lora_info = available[lora_name]
+    lora_info = available[effective_name]
     lora_path = lora_info["path"]
 
     compatible, reason = validate_lora_compatibility(lora_path)
     if not compatible:
-        print(f"[ACE-Step] LoRA '{lora_name}' incompatible: {reason}", flush=True)
+        print(f"[ACE-Step] LoRA '{effective_name}' incompatible: {reason}", flush=True)
         return f"LoRA incompatible with ACE-Step v1.5: {reason}"
 
     try:
@@ -172,24 +192,24 @@ def apply_lora(lora_name, lora_scale=1.0):
             except Exception as ue:
                 print(f"[ACE-Step] Warning during unload: {ue}", flush=True)
 
-        print(f"[ACE-Step] Loading LoRA: {lora_name} (scale={lora_scale}) from {lora_path} ({lora_info['source']})", flush=True)
+        print(f"[ACE-Step] Loading LoRA: {effective_name} (scale={lora_scale}) from {lora_path} ({lora_info['source']})", flush=True)
 
-        result = dit_handler.add_lora(lora_path, adapter_name=lora_name)
+        result = dit_handler.add_lora(lora_path, adapter_name=effective_name)
         print(f"[ACE-Step] add_lora result: {result}", flush=True)
 
         if isinstance(result, str) and result.startswith("❌"):
             return f"add_lora error: {result}"
 
         if lora_scale != 1.0 and hasattr(dit_handler, 'set_lora_scale'):
-            dit_handler.set_lora_scale(lora_name, lora_scale)
+            dit_handler.set_lora_scale(effective_name, lora_scale)
             print(f"[ACE-Step] Set LoRA scale: {lora_scale}", flush=True)
 
-        current_lora = lora_name
-        print(f"[ACE-Step] LoRA loaded successfully: {lora_name}", flush=True)
+        current_lora = effective_name
+        print(f"[ACE-Step] LoRA loaded successfully: {effective_name}", flush=True)
         return True
     except Exception as e:
         err_msg = f"{type(e).__name__}: {str(e)[:1000]}"
-        print(f"[ACE-Step] Error loading LoRA {lora_name}: {err_msg}", flush=True)
+        print(f"[ACE-Step] Error loading LoRA {effective_name}: {err_msg}", flush=True)
         traceback.print_exc()
         current_lora = None
         return err_msg
@@ -492,6 +512,7 @@ def handler(job):
 
         lora_name = job_input.get("lora_name", None)
         lora_scale = float(job_input.get("lora_scale", 1.0))
+        lora_revision = job_input.get("lora_revision", None)
 
         if job_input.get("action") == "exec_python":
             code = job_input.get("code", "")
@@ -607,10 +628,11 @@ def handler(job):
             return diag
 
         if lora_name and lora_name != "none":
-            lora_result = apply_lora(lora_name, lora_scale)
+            lora_result = apply_lora(lora_name, lora_scale, lora_revision=lora_revision)
             if lora_result is not True:
                 err_detail = lora_result if isinstance(lora_result, str) else "unknown"
-                return {"error": f"Failed to load LoRA: {lora_name}. Detail: {err_detail}. Available: {list(scan_available_loras().keys())}"}
+                effective = f"{lora_name}_{lora_revision}" if lora_revision else lora_name
+                return {"error": f"Failed to load LoRA: {effective}. Detail: {err_detail}. Available: {list(scan_available_loras().keys())}"}
         elif current_lora and (not lora_name or lora_name == "none"):
             apply_lora(None)
 
