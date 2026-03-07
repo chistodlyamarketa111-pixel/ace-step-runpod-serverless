@@ -42,7 +42,10 @@ RUN uv pip install --system --no-cache-dir \
     huggingface_hub \
     torch \
     torchaudio \
-    demucs
+    torchcodec \
+    demucs \
+    pedalboard \
+    pyloudnorm
 
 RUN uv pip install --system --no-cache-dir ./acestep/third_parts/nano-vllm || true
 
