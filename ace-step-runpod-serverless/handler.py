@@ -15,13 +15,75 @@ import traceback
 import tempfile
 import subprocess
 
-HANDLER_VERSION = "2026-03-06-v7"
+HANDLER_VERSION = "2026-03-06-v8-mastering-r3"
 print(f"[ACE-Step] Handler starting (lazy loading mode) version={HANDLER_VERSION}...", flush=True)
 
 import runpod
 import torch
+import numpy as np
 from acestep.handler import AceStepHandler
 from acestep.inference import GenerationParams, GenerationConfig, generate_music
+
+try:
+    from pedalboard import Pedalboard, HighpassFilter, LowShelfFilter, PeakFilter, HighShelfFilter, Compressor, Limiter, Gain
+    import pyloudnorm as pyln
+    MASTERING_AVAILABLE = True
+    print("[ACE-Step] Mastering pipeline loaded (pedalboard + pyloudnorm)", flush=True)
+except ImportError as e:
+    MASTERING_AVAILABLE = False
+    print(f"[ACE-Step] Mastering not available: {e}", flush=True)
+
+
+def master_audio(waveform, sample_rate):
+    if not MASTERING_AVAILABLE:
+        print("[ACE-Step] Mastering skipped (libraries not installed)", flush=True)
+        return waveform
+
+    print("[ACE-Step] Applying mastering pipeline...", flush=True)
+
+    if isinstance(waveform, torch.Tensor):
+        audio_np = waveform.cpu().numpy().astype(np.float32)
+    else:
+        audio_np = np.array(waveform, dtype=np.float32)
+
+    if audio_np.ndim == 1:
+        audio_np = audio_np[np.newaxis, :]
+
+    board = Pedalboard([
+        HighpassFilter(cutoff_frequency_hz=30.0),
+        LowShelfFilter(cutoff_frequency_hz=200.0, gain_db=-2.0),
+        PeakFilter(cutoff_frequency_hz=3000.0, gain_db=2.0, q=1.0),
+        HighShelfFilter(cutoff_frequency_hz=10000.0, gain_db=1.5),
+        Compressor(threshold_db=-18.0, ratio=3.0, attack_ms=10.0, release_ms=100.0),
+        Limiter(threshold_db=-1.0),
+    ])
+
+    processed = board(audio_np, sample_rate)
+
+    try:
+        meter = pyln.Meter(sample_rate)
+        loudness_input = processed.T if processed.shape[0] <= 2 else processed
+        if loudness_input.ndim == 1:
+            loudness_input = loudness_input[:, np.newaxis]
+        current_lufs = meter.integrated_loudness(loudness_input)
+        if not np.isinf(current_lufs) and not np.isnan(current_lufs):
+            target_lufs = -14.0
+            gain_db = target_lufs - current_lufs
+            gain_db = np.clip(gain_db, -20.0, 20.0)
+            gain_linear = 10.0 ** (gain_db / 20.0)
+            processed = processed * gain_linear
+            peak = np.abs(processed).max()
+            if peak > 0.99:
+                processed = processed * (0.99 / peak)
+            print(f"[ACE-Step] LUFS normalized: {current_lufs:.1f} -> {target_lufs:.1f} (gain: {gain_db:+.1f}dB)", flush=True)
+        else:
+            print("[ACE-Step] LUFS measurement failed (silence?), skipping normalization", flush=True)
+    except Exception as e:
+        print(f"[ACE-Step] LUFS normalization error: {e}, skipping", flush=True)
+
+    if isinstance(waveform, torch.Tensor):
+        return torch.from_numpy(processed)
+    return processed
 
 CHECKPOINT_DIR = os.environ.get("ACESTEP_CHECKPOINT_DIR", "/app/checkpoints")
 PROJECT_ROOT = os.environ.get("ACESTEP_PROJECT_ROOT", "/app")
@@ -318,7 +380,7 @@ def separate_vocals(audio_path):
     return vocals, demucs_model.samplerate
 
 
-def mix_audio(vocals_tensor, vocals_sr, instrumental_path, output_path, vocal_volume=1.0, instrumental_volume=0.85):
+def mix_audio(vocals_tensor, vocals_sr, instrumental_path, output_path, vocal_volume=1.0, instrumental_volume=0.85, do_mastering=True):
     import torchaudio
 
     inst_waveform, inst_sr = torchaudio.load(instrumental_path)
@@ -339,7 +401,14 @@ def mix_audio(vocals_tensor, vocals_sr, instrumental_path, output_path, vocal_vo
     if peak > 0.95:
         mixed = mixed * (0.95 / peak)
 
-    torchaudio.save(output_path, mixed, vocals_sr, format="mp3")
+    if do_mastering:
+        mixed = master_audio(mixed, vocals_sr)
+
+    fmt = os.path.splitext(output_path)[1].lstrip(".") or "mp3"
+    if fmt == "mp3":
+        torchaudio.save(output_path, mixed, vocals_sr, format="mp3", compression=-2)
+    else:
+        torchaudio.save(output_path, mixed, vocals_sr, format=fmt)
     return output_path
 
 
@@ -391,15 +460,31 @@ def generate_single(job_input, job_id, override_params=None):
         elif "tensor" in audio_info and audio_info["tensor"] is not None:
             import torchaudio
             tensor = audio_info["tensor"]
-            sr = audio_info.get("sample_rate", 48000)
+            sr = audio_info.get("sample_rate", 44100)
             out_path = os.path.join(save_dir, f"output.{audio_format}")
-            torchaudio.save(out_path, tensor.cpu(), sr, format=audio_format)
+            if audio_format == "mp3":
+                torchaudio.save(out_path, tensor.cpu(), sr, format="mp3", compression=-2)
+            else:
+                torchaudio.save(out_path, tensor.cpu(), sr, format=audio_format)
             return out_path, None
 
     return None, "No audio generated"
 
 
-def handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_format):
+def _reencode_file(filepath, do_mastering, audio_format="mp3"):
+    import torchaudio
+    wav, sr = torchaudio.load(filepath)
+    if do_mastering:
+        wav = master_audio(wav, sr)
+    buf = io.BytesIO()
+    if audio_format == "mp3":
+        torchaudio.save(buf, wav, sr, format="mp3", compression=-2)
+    else:
+        torchaudio.save(buf, wav, sr, format=audio_format)
+    return base64.b64encode(buf.getvalue()).decode("utf-8"), sr
+
+
+def handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_format, do_mastering=True):
     start = time.time()
     vocal_volume = float(job_input.get("vocal_volume", 1.0))
     instrumental_volume = float(job_input.get("instrumental_volume", 0.85))
@@ -425,8 +510,7 @@ def handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_forma
         print(f"[ACE-Step] Vocals separated: shape={vocals_tensor.shape}, sr={vocals_sr}", flush=True)
     except Exception as e:
         print(f"[ACE-Step] Vocal separation failed: {e}. Returning full track instead.", flush=True)
-        with open(full_path, "rb") as f:
-            audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+        audio_b64, actual_sr = _reencode_file(full_path, do_mastering, audio_format)
         gen_time = time.time() - start
         return {
             "audio_base64": audio_b64,
@@ -434,22 +518,22 @@ def handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_forma
             "filename": f"ace_step_hybrid_{job['id'][:12]}.mp3",
             "generation_time": round(gen_time, 1),
             "duration": float(job_input.get("audio_duration", job_input.get("duration", -1))),
-            "sample_rate": 48000,
+            "sample_rate": actual_sr,
             "model": model_name,
             "lora": lora_name if lora_name and lora_name != "none" else None,
             "mode": "hybrid",
             "hybrid_status": "fallback_no_demucs",
+            "mastered": do_mastering,
         }
 
     print("[ACE-Step] Step 4/4: Mixing vocals + clean instrumental...", flush=True)
     mix_dir = tempfile.mkdtemp(prefix="ace_hybrid_")
     mix_path = os.path.join(mix_dir, f"hybrid_mix.mp3")
     try:
-        mix_audio(vocals_tensor, vocals_sr, inst_path, mix_path, vocal_volume, instrumental_volume)
+        mix_audio(vocals_tensor, vocals_sr, inst_path, mix_path, vocal_volume, instrumental_volume, do_mastering=do_mastering)
     except Exception as e:
         print(f"[ACE-Step] Mix failed: {e}. Returning full track.", flush=True)
-        with open(full_path, "rb") as f:
-            audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+        audio_b64, actual_sr = _reencode_file(full_path, do_mastering, audio_format)
         gen_time = time.time() - start
         return {
             "audio_base64": audio_b64,
@@ -457,11 +541,12 @@ def handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_forma
             "filename": f"ace_step_hybrid_{job['id'][:12]}.mp3",
             "generation_time": round(gen_time, 1),
             "duration": float(job_input.get("audio_duration", job_input.get("duration", -1))),
-            "sample_rate": 48000,
+            "sample_rate": actual_sr,
             "model": model_name,
             "lora": lora_name if lora_name and lora_name != "none" else None,
             "mode": "hybrid",
             "hybrid_status": "fallback_mix_failed",
+            "mastered": do_mastering,
         }
 
     gen_time = time.time() - start
@@ -475,11 +560,12 @@ def handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_forma
         "filename": f"ace_step_hybrid_{job['id'][:12]}.mp3",
         "generation_time": round(gen_time, 1),
         "duration": float(job_input.get("audio_duration", job_input.get("duration", -1))),
-        "sample_rate": 48000,
+        "sample_rate": vocals_sr,
         "model": model_name,
         "lora": lora_name if lora_name and lora_name != "none" else None,
         "mode": "hybrid",
         "hybrid_status": "success",
+        "mastered": do_mastering,
     }
 
 
@@ -509,6 +595,7 @@ def handler(job):
         mode = job_input.get("mode", "normal")
         model_name = job_input.get("model", DEFAULT_MODEL)
         audio_format = job_input.get("audio_format", "mp3")
+        do_mastering = job_input.get("mastering", True)
 
         lora_name = job_input.get("lora_name", None)
         lora_scale = float(job_input.get("lora_scale", 1.0))
@@ -637,7 +724,7 @@ def handler(job):
             apply_lora(None)
 
         if mode == "hybrid":
-            return handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_format)
+            return handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_format, do_mastering)
 
         prompt = job_input.get("prompt", "")
         lyrics = job_input.get("lyrics", "")
@@ -704,10 +791,21 @@ def handler(job):
         for i, audio_info in enumerate(result.audios):
             audio_path = audio_info.get("path", "")
             if audio_path and os.path.exists(audio_path):
-                with open(audio_path, "rb") as f:
-                    audio_bytes = f.read()
-                audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+                import torchaudio as _ta
                 ext = os.path.splitext(audio_path)[1].lstrip(".") or audio_format
+                if do_mastering:
+                    _wav, _sr = _ta.load(audio_path)
+                    _wav = master_audio(_wav, _sr)
+                    buf = io.BytesIO()
+                    if ext == "mp3":
+                        _ta.save(buf, _wav, _sr, format="mp3", compression=-2)
+                    else:
+                        _ta.save(buf, _wav, _sr, format=ext)
+                    audio_bytes = buf.getvalue()
+                else:
+                    with open(audio_path, "rb") as f:
+                        audio_bytes = f.read()
+                audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
                 content_type_map = {"mp3": "audio/mpeg", "wav": "audio/wav", "flac": "audio/flac"}
                 return {
                     "audio_base64": audio_b64,
@@ -715,16 +813,22 @@ def handler(job):
                     "filename": f"ace_step_{job['id'][:12]}_{i}.{ext}",
                     "generation_time": round(gen_time, 1),
                     "duration": duration,
-                    "sample_rate": 48000,
+                    "sample_rate": 44100,
                     "model": model_name,
                     "lora": lora_name if lora_name and lora_name != "none" else None,
+                    "mastered": do_mastering,
                 }
             elif "tensor" in audio_info and audio_info["tensor"] is not None:
                 import torchaudio
                 tensor = audio_info["tensor"]
-                sr = audio_info.get("sample_rate", 48000)
+                sr = audio_info.get("sample_rate", 44100)
+                if do_mastering:
+                    tensor = master_audio(tensor, sr)
                 buf = io.BytesIO()
-                torchaudio.save(buf, tensor.cpu(), sr, format=audio_format)
+                if audio_format == "mp3":
+                    torchaudio.save(buf, tensor.cpu(), sr, format="mp3", compression=-2)
+                else:
+                    torchaudio.save(buf, tensor.cpu(), sr, format=audio_format)
                 audio_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
                 content_type_map = {"mp3": "audio/mpeg", "wav": "audio/wav", "flac": "audio/flac"}
                 return {
@@ -736,6 +840,7 @@ def handler(job):
                     "sample_rate": sr,
                     "model": model_name,
                     "lora": lora_name if lora_name and lora_name != "none" else None,
+                    "mastered": do_mastering,
                 }
 
         return {"error": "No audio files generated"}
