@@ -15,13 +15,41 @@ import traceback
 import tempfile
 import subprocess
 
-HANDLER_VERSION = "2026-03-06-v8-mastering-r4"
+HANDLER_VERSION = "2026-03-07-v8-mastering-r5"
 print(f"[ACE-Step] Handler starting (lazy loading mode) version={HANDLER_VERSION}...", flush=True)
 
 import runpod
 import torch
 import numpy as np
 import torchaudio
+import io as _io
+import tempfile as _tmpf
+
+_original_ta_load = torchaudio.load
+def _patched_ta_load(filepath, **kwargs):
+    if 'backend' not in kwargs:
+        kwargs['backend'] = 'soundfile'
+    return _original_ta_load(filepath, **kwargs)
+torchaudio.load = _patched_ta_load
+
+_original_ta_save = torchaudio.save
+def _patched_ta_save(filepath, src, sample_rate, **kwargs):
+    if isinstance(filepath, _io.BytesIO):
+        fmt = kwargs.get('format', 'wav')
+        with _tmpf.NamedTemporaryFile(suffix=f'.{fmt}', delete=False) as tmp:
+            _original_ta_save(tmp.name, src, sample_rate, **kwargs)
+            import os as _os
+            with open(tmp.name, 'rb') as f:
+                data = f.read()
+            filepath.write(data)
+            filepath.seek(0)
+            _os.unlink(tmp.name)
+    else:
+        _original_ta_save(filepath, src, sample_rate, **kwargs)
+torchaudio.save = _patched_ta_save
+
+print(f"[ACE-Step] torchaudio patched for soundfile backend + BytesIO compat", flush=True)
+
 from acestep.handler import AceStepHandler
 from acestep.inference import GenerationParams, GenerationConfig, generate_music
 
