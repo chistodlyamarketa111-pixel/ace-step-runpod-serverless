@@ -15,12 +15,13 @@ import traceback
 import tempfile
 import subprocess
 
-HANDLER_VERSION = "2026-03-06-v8-mastering-r3"
+HANDLER_VERSION = "2026-03-06-v8-mastering-r4"
 print(f"[ACE-Step] Handler starting (lazy loading mode) version={HANDLER_VERSION}...", flush=True)
 
 import runpod
 import torch
 import numpy as np
+import torchaudio
 from acestep.handler import AceStepHandler
 from acestep.inference import GenerationParams, GenerationConfig, generate_music
 
@@ -32,6 +33,16 @@ try:
 except ImportError as e:
     MASTERING_AVAILABLE = False
     print(f"[ACE-Step] Mastering not available: {e}", flush=True)
+
+
+def _save_audio_to_bytes(tensor, sr, fmt="mp3"):
+    with tempfile.NamedTemporaryFile(suffix=f".{fmt}", delete=True) as tmp:
+        if fmt == "mp3":
+            torchaudio.save(tmp.name, tensor.cpu(), sr, format="mp3", compression=-2)
+        else:
+            torchaudio.save(tmp.name, tensor.cpu(), sr, format=fmt)
+        with open(tmp.name, "rb") as f:
+            return f.read()
 
 
 def master_audio(waveform, sample_rate):
@@ -472,16 +483,11 @@ def generate_single(job_input, job_id, override_params=None):
 
 
 def _reencode_file(filepath, do_mastering, audio_format="mp3"):
-    import torchaudio
     wav, sr = torchaudio.load(filepath)
     if do_mastering:
         wav = master_audio(wav, sr)
-    buf = io.BytesIO()
-    if audio_format == "mp3":
-        torchaudio.save(buf, wav, sr, format="mp3", compression=-2)
-    else:
-        torchaudio.save(buf, wav, sr, format=audio_format)
-    return base64.b64encode(buf.getvalue()).decode("utf-8"), sr
+    audio_bytes = _save_audio_to_bytes(wav, sr, audio_format)
+    return base64.b64encode(audio_bytes).decode("utf-8"), sr
 
 
 def handle_hybrid(job, job_input, model_name, lora_name, lora_scale, audio_format, do_mastering=True):
@@ -791,17 +797,11 @@ def handler(job):
         for i, audio_info in enumerate(result.audios):
             audio_path = audio_info.get("path", "")
             if audio_path and os.path.exists(audio_path):
-                import torchaudio as _ta
                 ext = os.path.splitext(audio_path)[1].lstrip(".") or audio_format
                 if do_mastering:
-                    _wav, _sr = _ta.load(audio_path)
+                    _wav, _sr = torchaudio.load(audio_path)
                     _wav = master_audio(_wav, _sr)
-                    buf = io.BytesIO()
-                    if ext == "mp3":
-                        _ta.save(buf, _wav, _sr, format="mp3", compression=-2)
-                    else:
-                        _ta.save(buf, _wav, _sr, format=ext)
-                    audio_bytes = buf.getvalue()
+                    audio_bytes = _save_audio_to_bytes(_wav, _sr, ext)
                 else:
                     with open(audio_path, "rb") as f:
                         audio_bytes = f.read()
@@ -819,17 +819,12 @@ def handler(job):
                     "mastered": do_mastering,
                 }
             elif "tensor" in audio_info and audio_info["tensor"] is not None:
-                import torchaudio
                 tensor = audio_info["tensor"]
                 sr = audio_info.get("sample_rate", 44100)
                 if do_mastering:
                     tensor = master_audio(tensor, sr)
-                buf = io.BytesIO()
-                if audio_format == "mp3":
-                    torchaudio.save(buf, tensor.cpu(), sr, format="mp3", compression=-2)
-                else:
-                    torchaudio.save(buf, tensor.cpu(), sr, format=audio_format)
-                audio_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+                audio_bytes = _save_audio_to_bytes(tensor, sr, audio_format)
+                audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
                 content_type_map = {"mp3": "audio/mpeg", "wav": "audio/wav", "flac": "audio/flac"}
                 return {
                     "audio_base64": audio_b64,
