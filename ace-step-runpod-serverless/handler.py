@@ -34,14 +34,38 @@ torchaudio.load = _patched_ta_load
 
 _original_ta_save = torchaudio.save
 def _patched_ta_save(filepath, src, sample_rate, **kwargs):
-    if isinstance(filepath, _io.BytesIO):
-        fmt = kwargs.get('format', 'wav')
-        with _tmpf.NamedTemporaryFile(suffix=f'.{fmt}', delete=False) as tmp:
+    fmt = kwargs.get('format', '')
+    is_mp3 = (fmt == 'mp3')
+    if is_mp3:
+        kwargs.pop('compression', None)
+        kwargs.pop('bit_rate', None)
+        kwargs.pop('format', None)
+        with _tmpf.NamedTemporaryFile(suffix='.wav', delete=False) as wav_tmp:
+            _original_ta_save(wav_tmp.name, src, sample_rate, format='wav')
+            mp3_path = wav_tmp.name + '.mp3'
+            import subprocess as _sp
+            _sp.run(['ffmpeg', '-y', '-i', wav_tmp.name, '-b:a', '320k', '-q:a', '0', mp3_path],
+                    capture_output=True, timeout=30)
+            import os as _os
+            _os.unlink(wav_tmp.name)
+            if isinstance(filepath, _io.BytesIO):
+                with open(mp3_path, 'rb') as f:
+                    filepath.write(f.read())
+                filepath.seek(0)
+                _os.unlink(mp3_path)
+            elif isinstance(filepath, str):
+                import shutil
+                shutil.move(mp3_path, filepath)
+            else:
+                with open(mp3_path, 'rb') as f:
+                    filepath.write(f.read())
+                _os.unlink(mp3_path)
+    elif isinstance(filepath, _io.BytesIO):
+        with _tmpf.NamedTemporaryFile(suffix=f'.{fmt or "wav"}', delete=False) as tmp:
             _original_ta_save(tmp.name, src, sample_rate, **kwargs)
             import os as _os
             with open(tmp.name, 'rb') as f:
-                data = f.read()
-            filepath.write(data)
+                filepath.write(f.read())
             filepath.seek(0)
             _os.unlink(tmp.name)
     else:
