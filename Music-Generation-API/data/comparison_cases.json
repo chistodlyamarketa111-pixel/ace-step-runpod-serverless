@@ -1,0 +1,452 @@
+[
+  {
+    "id": "rap_001",
+    "category": "street",
+    "title": "Бетонные джунгли",
+    "style_prompt": "Russian street rap, dark 808 trap beat, heavy bass, lo-fi gritty atmosphere, BPM 140, aggressive hi-hats, minor key, urban street vibes, raw vocal delivery",
+    "lyrics": "[Verse]\nБетонные джунгли, асфальт под ногами,\nЗдесь каждый второй с холодными глазами.\nФонари мигают, тени на стенах,\nМой район — мой мир, мой вечный страх.\nПодъезды пахнут сыростью и дымом,\nМы выросли здесь, непобедимы.\nКаждый день как бой, каждый шаг — борьба,\nНо это мой дом, моя судьба.\n\n[Chorus]\nУлицы не спят, улицы зовут,\nЗдесь мои братья, здесь мой маршрут.\nБетон и сталь — вот наш фундамент,\nМы не сдаёмся, это наш момент.",
+    "track_a": "/audio/rap_001_a.mp3",
+    "track_b": "/audio/rap_001_b.mp3"
+  },
+  {
+    "id": "rap_002",
+    "category": "street",
+    "title": "Двор не забудет",
+    "style_prompt": "Russian street hip-hop, booming 808 bass, trap snares, dark pads, BPM 135, authentic street sound, reverb vocals, minor key progression",
+    "lyrics": "[Verse]\nДвор не забудет тех, кто здесь вырос,\nКто бегал по крышам, кто первым закурил.\nМы делили всё — от хлеба до проблем,\nИ знали точно: свой не сдаст совсем.\nГаражи, подвалы, стены в граффити,\nЗдесь наши имена, попробуй их сотри.\nВремя изменилось, но код остался тот же,\nСвоих не бросаем — это нас тревожит.\n\n[Chorus]\nДвор не забудет, двор не простит,\nКто предал своих — тот навсегда один.\nМы вместе росли под этим серым небом,\nИ этот район навеки станет мне гербом.",
+    "track_a": "/audio/rap_002_a.mp3",
+    "track_b": "/audio/rap_002_b.mp3"
+  },
+  {
+    "id": "rap_003",
+    "category": "street",
+    "title": "Ночной район",
+    "style_prompt": "Russian street rap, menacing trap beat, 808 sub bass, dark ambient pads, BPM 130, heavy reverb, sparse hi-hats, nocturnal urban atmosphere",
+    "lyrics": "[Verse]\nНочной район, фонари не горят,\nТолько тени скользят, только псы не молчат.\nТут не место для слабых, тут свой закон,\nКто не понял — узнает, заплатит потом.\nКапюшон на глаза, руки в карманах,\nИду по своим, не ищу я охрану.\nЗдесь каждый квадрат пропитан историей,\nГде слёзы и кровь — это наша территория.\n\n[Chorus]\nНочной район, здесь правда без масок,\nЗдесь жизнь не из книг, не из детских сказок.\nМы знаем цену каждому слову,\nИ каждую ночь начинаем всё снова.",
+    "track_a": "/audio/rap_003_a.mp3",
+    "track_b": "/audio/rap_003_b.mp3"
+  },
+  {
+    "id": "rap_004",
+    "category": "street",
+    "title": "Серый асфальт",
+    "style_prompt": "Russian underground street rap, heavy 808 kick, distorted bass, rolling hi-hats, BPM 145, dark piano melody, raw unpolished mix, street anthem vibe",
+    "lyrics": "[Verse]\nСерый асфальт помнит мои кроссовки,\nКаждый поворот, каждую остановку.\nОт школы до двора — десять минут,\nНо в этих десяти — целый маршрут.\nПацаны на лавке, музыка из колонки,\nМечты о большом в маленькой двушке.\nМама на работе, батя давно ушёл,\nНо я поднимусь — запомни, я пришёл.\n\n[Chorus]\nСерый асфальт, серое небо,\nНо я нарисую цветами, где не был.\nМой район — моя стартовая площадка,\nОтсюда взлечу, и не будет откатка.",
+    "track_a": "/audio/rap_004_a.mp3",
+    "track_b": "/audio/rap_004_b.mp3"
+  },
+  {
+    "id": "rap_005",
+    "category": "street",
+    "title": "Кодекс улиц",
+    "style_prompt": "Russian street trap, aggressive 808 pattern, dark string samples, hard-hitting snares, BPM 138, ominous atmosphere, street code anthem, bass-heavy mix",
+    "lyrics": "[Verse]\nКодекс улиц — неписаный закон,\nЕго не учат в школах, он в крови рождён.\nНе стучи, не ной, держи удар,\nИ если слово дал — значит слово дал.\nМы не выбирали, где родиться нам,\nНо выбрали не гнуться по чужим углам.\nРайон — семья, и это не слова,\nТут каждый за своих — такие вот дела.\n\n[Chorus]\nКодекс улиц — просто и сурово,\nНикаких понтов, только дело, слово.\nМы из тех дворов, где взрослеют рано,\nГде мечты — не сказки, а маршрут упрямый.",
+    "track_a": "/audio/rap_005_a.mp3",
+    "track_b": "/audio/rap_005_b.mp3"
+  },
+  {
+    "id": "rap_006",
+    "category": "street",
+    "title": "Панельки",
+    "style_prompt": "Russian street rap, classic boom bap meets modern trap, 808 bass, vinyl crackle texture, BPM 132, nostalgic yet hard, concrete jungle sound",
+    "lyrics": "[Verse]\nПанельки в ряд, одинаковый вид,\nНо за каждым окном — своя боль, свой быт.\nПятый этаж, лифт опять не работает,\nНо ноги несут, и душа не сдаётся.\nСосед играет в карты, бабушка ворчит,\nА мелкий во дворе под битом стоит.\nЧитает свой первый куплет неумело,\nНо глаза горят — значит это его дело.\n\n[Chorus]\nПанельки, панельки — наш бетонный рай,\nЗдесь мы выросли, здесь наш вечный край.\nНе гламур, не блеск — просто честный быт,\nНо кто отсюда вышел — тот непобедим.",
+    "track_a": "/audio/rap_006_a.mp3",
+    "track_b": "/audio/rap_006_b.mp3"
+  },
+  {
+    "id": "rap_007",
+    "category": "street",
+    "title": "Маршрутка домой",
+    "style_prompt": "Russian street hip-hop, melancholic trap beat, deep 808 bass, atmospheric pads, BPM 128, late night city vibes, emotional street storytelling",
+    "lyrics": "[Verse]\nМаршрутка домой, последний рейс,\nЗа окном огни — чужой успех.\nЯ считаю мелочь, хватит ли на хлеб,\nНо в голове мечты — и это не бред.\nРабочий день убил, но не сломал,\nЗавтра снова в бой — я это обещал.\nМаме позвоню, скажу что всё нормально,\nХотя в кармане пусто — но это не фатально.\n\n[Chorus]\nМаршрутка домой, огни за стеклом,\nЯ еду туда, где ждут за столом.\nПусть мало пока, но я поднимусь,\nИ больше в эту маршрутку не вернусь.",
+    "track_a": "/audio/rap_007_a.mp3",
+    "track_b": "/audio/rap_007_b.mp3"
+  },
+  {
+    "id": "rap_008",
+    "category": "street",
+    "title": "Раёны-кварталы",
+    "style_prompt": "Russian street rap anthem, powerful 808 bass, trap drums, epic horn samples, BPM 142, anthem-like energy, district pride, massive low end",
+    "lyrics": "[Verse]\nРаёны-кварталы, мосты и проспекты,\nЗдесь каждый забор — это чей-то проект.\nМы красим стены, мы пишем мечты,\nНа языке улиц, где правда — на ты.\nОт Бутово до Купчино — один менталитет,\nМы знаем что такое, когда денег нет.\nНо мы не жалуемся, мы просто идём,\nИ каждый новый день — это наш подъём.\n\n[Chorus]\nРаёны-кварталы, мы здесь навсегда,\nНас не сломает ни снег, ни беда.\nМы — дети бетона, мы — голос дворов,\nИ наш микрофон заменяет нам кров.",
+    "track_a": "/audio/rap_008_a.mp3",
+    "track_b": "/audio/rap_008_b.mp3"
+  },
+  {
+    "id": "rap_009",
+    "category": "street",
+    "title": "Гаражи",
+    "style_prompt": "Russian street rap, raw lo-fi beat, dusty samples, 808 kick drum, BPM 136, underground garage session feel, authentic street poetry",
+    "lyrics": "[Verse]\nГаражи на районе — наша студия,\nЗдесь первый бит писали, здесь была прелюдия.\nМагнитофон, кассета, микрофон за стольник,\nНо мы читали так, будто зал на тысячу.\nЗимой тут холод, летом духота,\nНо рифмы шли потоком — вот это красота.\nНикто не верил, что мы куда-то выйдем,\nНо мы читали дальше — мы своё увидим.\n\n[Chorus]\nГаражи, гаражи — храм уличных поэтов,\nЗдесь рождались строки без бюджетов.\nМы из подвалов вышли на сцену,\nИ этот путь не знает себе цену.",
+    "track_a": "/audio/rap_009_a.mp3",
+    "track_b": "/audio/rap_009_b.mp3"
+  },
+  {
+    "id": "rap_010",
+    "category": "street",
+    "title": "Спальный район",
+    "style_prompt": "Russian street rap, dark minimal trap, deep sub bass 808, sparse percussion, BPM 134, cold urban atmosphere, concrete poetry, heavy bass drops",
+    "lyrics": "[Verse]\nСпальный район засыпает к полуночи,\nНо мы не спим — у нас другие источники.\nБлокнот и ручка, битбокс на кухне,\nМы делаем музыку, пока мир потухнет.\nЗдесь нет клубов, нет модных кафе,\nНо есть свой звук, свой стиль, своё кафе.\nЛавочка у дома — наша VIP-ложа,\nИ каждый вечер — премьера, каждый вечер — тоже.\n\n[Chorus]\nСпальный район, но мы не спим,\nМы пишем хиты под фонарём одним.\nОтсюда в мир — через наши колонки,\nСпальный район, но мечты — не в рамке.",
+    "track_a": "/audio/rap_010_a.mp3",
+    "track_b": "/audio/rap_010_b.mp3"
+  },
+  {
+    "id": "rap_011",
+    "category": "melodic",
+    "title": "Дождь за окном",
+    "style_prompt": "Russian melodic rap, smooth R&B influenced beat, soft piano chords, gentle 808, BPM 120, emotional autotune vocals, rainy mood, warm reverb, dreamy atmosphere",
+    "lyrics": "[Verse]\nДождь за окном рисует узоры,\nТвоё имя шепчу, как молитву повторю.\nМы были вместе — помнишь те вечера?\nКогда весь мир казался нам игрой без конца.\nТвои глаза — два озера печали,\nМы столько обещали, но не удержали.\nТеперь сижу один, и капли по стеклу\nНапоминают ритм — я без тебя тону.\n\n[Chorus]\nДождь за окном, и я тону в нём,\nТвой силуэт горит ночным огнём.\nМы потеряли то, что не вернуть,\nНо я всё помню — каждый вздох, каждый путь.",
+    "track_a": "/audio/rap_011_a.mp3",
+    "track_b": "/audio/rap_011_b.mp3"
+  },
+  {
+    "id": "rap_012",
+    "category": "melodic",
+    "title": "Полночный вайб",
+    "style_prompt": "Russian melodic hip-hop, lo-fi chill beat, jazzy chords, soft kick and snare, BPM 115, mellow vibes, smooth vocal flow, late night R&B fusion",
+    "lyrics": "[Verse]\nПолночный вайб, город в неоне,\nТвой голос в наушниках, я на балконе.\nЗвёзды не видно, но я чувствую свет,\nТот, что ты дарила мне столько лет.\nМы танцевали на пустых крышах,\nИ мир вокруг нас становился тише.\nТвои ладони — мой компас в ночи,\nБез них я заблудился, но ищу ключи.\n\n[Chorus]\nПолночный вайб, мелодия в ночи,\nТы моя нота, ты мои лучи.\nДаже если тьма — я найду тебя,\nПолночный вайб — это ты и я.",
+    "track_a": "/audio/rap_012_a.mp3",
+    "track_b": "/audio/rap_012_b.mp3"
+  },
+  {
+    "id": "rap_013",
+    "category": "melodic",
+    "title": "Облака",
+    "style_prompt": "Russian melodic rap, dreamy synth pads, gentle trap drums, ethereal atmosphere, BPM 118, cloud rap influence, soft autotune, floating melody, ambient textures",
+    "lyrics": "[Verse]\nОблака плывут — я плыву за ними,\nОставляя землю с её проблемами и именем.\nВыше, выше — там где тишина,\nГде нет обид и боль не видна.\nТы говорила: \"Не улетай далеко\",\nНо здесь наверху мне так легко.\nМежду небом и мечтой — мой маршрут,\nИ облака меня к тебе ведут.\n\n[Chorus]\nОблака, облака — унесите меня,\nТуда где любовь, где ждёт тишина.\nЯ отпускаю всё, что держало внизу,\nИ в облаках твою улыбку найду.",
+    "track_a": "/audio/rap_013_a.mp3",
+    "track_b": "/audio/rap_013_b.mp3"
+  },
+  {
+    "id": "rap_014",
+    "category": "melodic",
+    "title": "Фиолетовый закат",
+    "style_prompt": "Russian melodic rap, warm sunset chords, smooth bass guitar sample, soft 808, BPM 122, romantic vibe, gentle vocal runs, golden hour atmosphere, R&B melody",
+    "lyrics": "[Verse]\nФиолетовый закат окрасил город наш,\nМы сидим на крыше — это наш этаж.\nТвои волосы на ветру, мой голос в тишине,\nЯ читаю для тебя, а ты летишь ко мне.\nМомент застыл, как фото на стене,\nИ этот вечер будет сниться мне.\nГитара тихо плачет за спиной,\nА я шепчу: \"Останься, будь со мной\".\n\n[Chorus]\nФиолетовый закат — наш с тобой,\nМы рисуем мир акварелью золотой.\nПусть ночь придёт — мы будем вместе,\nФиолетовый закат — наша лучшая песня.",
+    "track_a": "/audio/rap_014_a.mp3",
+    "track_b": "/audio/rap_014_b.mp3"
+  },
+  {
+    "id": "rap_015",
+    "category": "melodic",
+    "title": "Танцуй со мной",
+    "style_prompt": "Russian melodic rap, dancehall influenced beat, tropical bass, smooth melody, BPM 125, feel-good vibes, catchy hook, warm synths, bouncy rhythm",
+    "lyrics": "[Verse]\nМузыка играет, забудь про завтра,\nСегодня только мы — и больше ничего не надо.\nТвоя улыбка — лучший бит на свете,\nДавай танцевать, как будто мы одни на планете.\nДвигайся ближе, чувствуй этот ритм,\nОн создан для нас, он в сердце говорит.\nНе думай о проблемах, отпусти контроль,\nСегодня ночь — и ты моя роль.\n\n[Chorus]\nТанцуй со мной, танцуй до утра,\nПока горят огни, пока звучит мечта.\nТанцуй со мной — забудь обо всём,\nМы в этом ритме вместе, мы в нём живём.",
+    "track_a": "/audio/rap_015_a.mp3",
+    "track_b": "/audio/rap_015_b.mp3"
+  },
+  {
+    "id": "rap_016",
+    "category": "melodic",
+    "title": "Сердце из стекла",
+    "style_prompt": "Russian melodic emo rap, piano-driven beat, atmospheric reverb, sad 808 bass, BPM 116, emotional delivery, broken heart theme, cinematic strings",
+    "lyrics": "[Verse]\nСердце из стекла — ты разбила его,\nОсколки на полу, и мне не собрать ничего.\nКаждый кусочек — это наше вчера,\nГде были поцелуи, где была весна.\nТы ушла тихо, даже дверь не хлопнув,\nА я стою и слышу, как внутри всё лопнет.\nПрозрачное сердце — видно каждый шрам,\nНо я его склею — не верю пополам.\n\n[Chorus]\nСердце из стекла, хрупкое как лёд,\nКто его уронит — тот уже не вернёт.\nНо я соберу осколки в темноте,\nИ снова буду верить в свет в тебе.",
+    "track_a": "/audio/rap_016_a.mp3",
+    "track_b": "/audio/rap_016_b.mp3"
+  },
+  {
+    "id": "rap_017",
+    "category": "melodic",
+    "title": "Неоновые сны",
+    "style_prompt": "Russian melodic rap, synthwave influenced, retro synths with modern trap drums, BPM 124, neon city aesthetic, vocoder effects, dreamy chorus, cyberpunk vibes",
+    "lyrics": "[Verse]\nНеоновые сны в моих глазах горят,\nГород не спит, и мы с ним не хотим назад.\nОгни рекламы пишут наши имена,\nМы — дети ночи, нам не нужна луна.\nТвоё лицо в экране — пиксели и свет,\nНо я чувствую тепло через интернет.\nМы живём быстрее, чем успеваем жить,\nНо в неоновых снах я хочу с тобой побыть.\n\n[Chorus]\nНеоновые сны — наш с тобой побег,\nОт серых будней в яркий новый век.\nМы светимся в ночи, как два огня,\nНеоновые сны — это ты и я.",
+    "track_a": "/audio/rap_017_a.mp3",
+    "track_b": "/audio/rap_017_b.mp3"
+  },
+  {
+    "id": "rap_018",
+    "category": "melodic",
+    "title": "Вдыхай",
+    "style_prompt": "Russian melodic rap, acoustic guitar loop, warm pad, soft trap beat, BPM 110, intimate atmosphere, whispered vocals, organic sound, soul influence",
+    "lyrics": "[Verse]\nВдыхай этот момент, он больше не повторится,\nКаждая секунда — как страница.\nМы пишем нашу книгу без черновиков,\nИ каждый абзац — это без лишних слов.\nТвоя рука в моей, мы идём по парку,\nЛистья под ногами — осень дарит арку.\nЗолотой тоннель, и в конце — рассвет,\nТы мой ответ на каждый мой вопрос — привет.\n\n[Chorus]\nВдыхай, вдыхай — этот воздух наш,\nПока мы вместе — это не мираж.\nВдыхай глубже — чувствуй каждый миг,\nЭтот момент — наш маленький цветник.",
+    "track_a": "/audio/rap_018_a.mp3",
+    "track_b": "/audio/rap_018_b.mp3"
+  },
+  {
+    "id": "rap_019",
+    "category": "melodic",
+    "title": "Мосты",
+    "style_prompt": "Russian melodic rap, emotional piano melody, orchestral strings, 808 bass, BPM 119, epic bridge metaphor, soaring chorus, cinematic production, heartfelt delivery",
+    "lyrics": "[Verse]\nМы строили мосты между нашими мирами,\nПо кирпичику, по слову, своими руками.\nНо ветер перемен сильнее наших стен,\nИ мост качается — я падаю на колен.\nТы на другом берегу, машешь рукой,\nА может прощаешься — я не пойму порой.\nНо я держу канат, я не отпущу,\nПока дышу — я этот мост спасу.\n\n[Chorus]\nМосты горят, но я построю новый,\nИз нот и рифм, из фраз и слова.\nМежду тобой и мной — всего лишь песня,\nИ этот мост — наш путь к воскресенью.",
+    "track_a": "/audio/rap_019_a.mp3",
+    "track_b": "/audio/rap_019_b.mp3"
+  },
+  {
+    "id": "rap_020",
+    "category": "melodic",
+    "title": "Последний танец",
+    "style_prompt": "Russian melodic rap, waltz-inspired rhythm with trap elements, elegant piano, soft strings, BPM 112, bittersweet farewell, romantic melancholy, lush production",
+    "lyrics": "[Verse]\nПоследний танец — музыка стихает,\nТвоё дыхание мне щёку согревает.\nМы кружимся вдвоём, забыв о том что всё,\nЧто завтра будет пусто, что уйдёшь своё.\nТуфли на паркете, платье в пол летит,\nА в глазах твоих — прощальный свет блестит.\nЯ запоминаю каждый поворот,\nПоследний танец — и потом уход.\n\n[Chorus]\nПоследний танец — дай мне ещё минуту,\nНе уходи, побудь со мной как будто.\nМузыка замрёт, но мы ещё кружимся,\nПоследний танец — мы в нём растворимся.",
+    "track_a": "/audio/rap_020_a.mp3",
+    "track_b": "/audio/rap_020_b.mp3"
+  },
+  {
+    "id": "rap_021",
+    "category": "aggressive",
+    "title": "Без тормозов",
+    "style_prompt": "Russian aggressive rap, heavy drill beat, distorted 808, aggressive hi-hats, BPM 148, dark energy, shouting vocals, industrial elements, hard-hitting kicks",
+    "lyrics": "[Verse]\nБез тормозов, я лечу на полной,\nМой флоу — ураган, мой бит — огонь и молнии.\nВы все на паузе, а я на перемотке,\nРву микрофон, как будто нет уже обмотки.\nКто тут крутой? Выходи на ринг,\nЯ ломаю рамки, я ломаю ритм.\nМой голос — оружие, мой текст — снаряд,\nИ каждый куплет — это мой парад.\n\n[Chorus]\nБез тормозов — давлю на газ,\nНе остановишь, я не про вас.\nБез тормозов — сносу всё на пути,\nПопробуй догони, попробуй обойти.",
+    "track_a": "/audio/rap_021_a.mp3",
+    "track_b": "/audio/rap_021_b.mp3"
+  },
+  {
+    "id": "rap_022",
+    "category": "aggressive",
+    "title": "Волки",
+    "style_prompt": "Russian aggressive trap, wolf howl samples, massive distorted bass, dark minor key, BPM 150, pack mentality anthem, fierce delivery, cinematic horror elements",
+    "lyrics": "[Verse]\nМы — волки, не овцы, запомни это,\nМы охотимся ночью, нам не нужно света.\nСтая идёт, и земля дрожит,\nКто встал на пути — тот уже лежит.\nКлыки обнажены, глаза горят,\nМы не просим — мы берём, без преград.\nЛес — наш дом, ночь — наш друг,\nИ в каждом вое — наш победный звук.\n\n[Chorus]\nВолки не спят, волки идут,\nНас не остановит ни цепь, ни кнут.\nМы рвём на части каждый ваш забор,\nВолки — это сила, волки — это хор.",
+    "track_a": "/audio/rap_022_a.mp3",
+    "track_b": "/audio/rap_022_b.mp3"
+  },
+  {
+    "id": "rap_023",
+    "category": "aggressive",
+    "title": "Режим зверя",
+    "style_prompt": "Russian aggressive rap, UK drill influence, sliding 808 bass, rapid-fire flow, BPM 145, beast mode energy, dark atmosphere, militant drums, grime elements",
+    "lyrics": "[Verse]\nРежим зверя — включаю на максимум,\nМой флоу — лавина, мой бит — это хаос.\nВы говорите много, но делаете мало,\nА я на этом бите разношу всё наповал.\nКаждое слово — как удар в челюсть,\nЯ не играю в рэп — я здесь всерьёз.\nМоя энергия — атомный реактор,\nИ каждый трек — это новый фактор.\n\n[Chorus]\nРежим зверя — не трогай клетку,\nЯ разнесу твою дискотеку.\nРежим зверя — рычу на бите,\nПопробуйте меня остановите.",
+    "track_a": "/audio/rap_023_a.mp3",
+    "track_b": "/audio/rap_023_b.mp3"
+  },
+  {
+    "id": "rap_024",
+    "category": "aggressive",
+    "title": "Тёмная сторона",
+    "style_prompt": "Russian dark aggressive rap, horror trap beat, eerie synths, punishing 808, BPM 140, villain anthem, deep growling bass, menacing vocal delivery, dark cinematic",
+    "lyrics": "[Verse]\nТёмная сторона — добро пожаловать,\nЗдесь нет правил, здесь нечего терять.\nМои демоны танцуют под этот бит,\nИ каждый из них за меня стоит.\nВы боитесь темноты? А я в ней живу,\nОна моя союзница — я в ней расту.\nТени шепчут мне слова для куплетов,\nИ каждый трек — это мой ответ им.\n\n[Chorus]\nТёмная сторона — здесь мой трон,\nЯ правлю ночью, я — тёмный фон.\nНе ищи свет — его здесь нет,\nТёмная сторона — мой чёрный свет.",
+    "track_a": "/audio/rap_024_a.mp3",
+    "track_b": "/audio/rap_024_b.mp3"
+  },
+  {
+    "id": "rap_025",
+    "category": "aggressive",
+    "title": "Детонация",
+    "style_prompt": "Russian aggressive rap, explosion SFX, maximum bass distortion, rapid double-time flow, BPM 155, explosive energy, war drums, industrial metal influence",
+    "lyrics": "[Verse]\nДетонация — взрываю этот трек,\nМой каждый бар — это ядерный эффект.\nНе подходи близко — будет детонация,\nМой микрофон — оружие, а рифмы — провокация.\nЯ на сцене как вулкан перед извержением,\nКаждое слово — с невероятным давлением.\nВы ещё не слышали такого напора,\nДетонация начнётся — и не будет спора.\n\n[Chorus]\nДетонация — бум, бум, бум,\nЯ взрываю зал, взрываю ум.\nДетонация — нет пути назад,\nКаждый мой куплет — это новый снаряд.",
+    "track_a": "/audio/rap_025_a.mp3",
+    "track_b": "/audio/rap_025_b.mp3"
+  },
+  {
+    "id": "rap_026",
+    "category": "aggressive",
+    "title": "Железный кулак",
+    "style_prompt": "Russian aggressive battle rap, hard-hitting drums, metallic samples, crushing 808, BPM 146, boxing ring energy, punch line delivery, raw power, competitive spirit",
+    "lyrics": "[Verse]\nЖелезный кулак — я бью без перчаток,\nМой рэп — нокаут, без остатков.\nТы вышел на ринг — теперь получай,\nКаждый мой панчлайн — смертельный трамвай.\nЯ тренировался в подвалах годами,\nПока вы сидели с пустыми словами.\nМой стиль — бетон, моя рифма — сталь,\nИ мне абсолютно не жаль.\n\n[Chorus]\nЖелезный кулак — удар за ударом,\nЯ не остановлюсь, пока не стану главным.\nЖелезный кулак — почувствуй мощь,\nМой рэп — это сила, а не просто дождь.",
+    "track_a": "/audio/rap_026_a.mp3",
+    "track_b": "/audio/rap_026_b.mp3"
+  },
+  {
+    "id": "rap_027",
+    "category": "aggressive",
+    "title": "Напалм",
+    "style_prompt": "Russian aggressive rap, fire trap beat, scorching synths, relentless hi-hats, BPM 152, napalm energy, burning intensity, aggressive ad-libs, war zone atmosphere",
+    "lyrics": "[Verse]\nНапалм на бите — всё горит вокруг,\nМой флоу — пожар, мой текст — мой друг.\nВы тушите свечки — я поджигаю сцены,\nМой каждый выход — это перемены.\nОгонь в глазах, огонь в крови,\nПопробуй потуши, если сможешь — лови.\nЯ не остановлюсь, пока всё не сгорит,\nИ на пепелище новый мир стоит.\n\n[Chorus]\nНапалм, напалм — сжигаю дотла,\nМоя музыка — это война и мечта.\nНапалм, напалм — не подходи,\nЯ горю на бите — просто отойди.",
+    "track_a": "/audio/rap_027_a.mp3",
+    "track_b": "/audio/rap_027_b.mp3"
+  },
+  {
+    "id": "rap_028",
+    "category": "aggressive",
+    "title": "Бронежилет",
+    "style_prompt": "Russian aggressive trap, military drums, aggressive brass stabs, heavy 808 slides, BPM 143, bulletproof mentality, armored flow, dark orchestral hits",
+    "lyrics": "[Verse]\nБронежилет на мне — я непробиваем,\nВаши дисы — пули, но я их отбиваю.\nКаждый хейтер — это мотивация,\nКаждый трек — моя бронированная станция.\nВы стреляете словами — я иду вперёд,\nНичто не остановит мой тяжёлый ход.\nЯ — танк на поле битвы вашей сцены,\nИ мои куплеты — это стальные стены.\n\n[Chorus]\nБронежилет — меня не пробить,\nМой рэп — броня, попробуй разбить.\nБронежилет — я иду сквозь огонь,\nИ каждый мой бар — это мощь и бой.",
+    "track_a": "/audio/rap_028_a.mp3",
+    "track_b": "/audio/rap_028_b.mp3"
+  },
+  {
+    "id": "rap_029",
+    "category": "aggressive",
+    "title": "Лавина",
+    "style_prompt": "Russian aggressive rap, avalanche sound design, overwhelming bass, chaotic drum patterns, BPM 148, unstoppable force, wall of sound, crushing energy, no mercy flow",
+    "lyrics": "[Verse]\nЛавина сходит — беги или умри,\nМой флоу накрывает — смотри и не ори.\nЯ — стихия, меня не удержать,\nКаждый новый куплет — это мощь и благодать.\nГоры дрожат от моего баса,\nИ нет такой стены, что меня не пустит в массы.\nЯ сношу преграды, как картонный дом,\nЛавина началась — и нет пути потом.\n\n[Chorus]\nЛавина, лавина — сметаю всё,\nМой рэп — катастрофа, но в этом всё моё.\nЛавина, лавина — не спрячешься нигде,\nЯ везде и всюду — в каждом твоём дне.",
+    "track_a": "/audio/rap_029_a.mp3",
+    "track_b": "/audio/rap_029_b.mp3"
+  },
+  {
+    "id": "rap_030",
+    "category": "aggressive",
+    "title": "Чёрный дым",
+    "style_prompt": "Russian aggressive dark rap, smoky atmosphere, grinding bass, relentless percussion, BPM 144, toxic energy, smoke machine aesthetic, heavy distortion, rage delivery",
+    "lyrics": "[Verse]\nЧёрный дым из моих колонок валит,\nМой бит настолько жёсткий, что бетон плавит.\nВы задыхаетесь от моего напора,\nА я только начал — ждите ещё больше горя.\nДым заполняет зал, не видно ничего,\nНо слышно каждый слог — и этого полно.\nЯ — чёрный дым, я проникаю всюду,\nВ ваших головах я поселюсь как чудо.\n\n[Chorus]\nЧёрный дым — дышите глубже,\nМой рэп — отрава, но вам станет лучше.\nЧёрный дым — затягивает в бездну,\nНо каждый мой трек — это путь к созвездию.",
+    "track_a": "/audio/rap_030_a.mp3",
+    "track_b": "/audio/rap_030_b.mp3"
+  },
+  {
+    "id": "rap_031",
+    "category": "lyrical",
+    "title": "Письмо себе",
+    "style_prompt": "Russian lyrical boom bap, classic hip-hop drums, jazz piano sample, vinyl crackle, BPM 90, introspective storytelling, thoughtful delivery, philosophical mood, old school vibe",
+    "lyrics": "[Verse]\nПисьмо себе — тому, кто был вчера,\nТому пацану, что верил в чудеса.\nЭй, слышишь, мелкий, всё будет непросто,\nНо ты дойдёшь — поверь мне, это точно.\nБудут те, кто предаст и бросит,\nБудут ночи, когда небо давит и уносит.\nНо помни — каждый шрам делает крепче,\nИ каждая слеза — это капля надежды вечной.\n\n[Chorus]\nПисьмо себе — через годы и расстояния,\nЯ помню всё: и боль, и ожидания.\nТому мальчишке с мечтами до небес —\nТы справился, братан, ты здесь.",
+    "track_a": "/audio/rap_031_a.mp3",
+    "track_b": "/audio/rap_031_b.mp3"
+  },
+  {
+    "id": "rap_032",
+    "category": "lyrical",
+    "title": "Часы",
+    "style_prompt": "Russian lyrical rap, clock ticking sample, mellow boom bap beat, contemplative guitar, BPM 88, time reflection theme, wise delivery, deep bass, philosophical atmosphere",
+    "lyrics": "[Verse]\nЧасы тикают — время не ждёт никого,\nКаждая минута — это выбор твоего.\nМы тратим годы на обиды и вражду,\nА жизнь проходит мимо — я уже не жду.\nСегодня я решил: хватит откладывать,\nМечты не ждут, пока ты будешь разгадывать.\nКаждый тик — напоминание о том,\nЧто завтра может не наступить — живи сейчас, потом.\n\n[Chorus]\nЧасы тикают, стрелки бегут,\nА мы стоим на месте — нас минуты не ждут.\nЧасы тикают — слышишь этот звук?\nЭто жизнь стучится — открой ей, друг.",
+    "track_a": "/audio/rap_032_a.mp3",
+    "track_b": "/audio/rap_032_b.mp3"
+  },
+  {
+    "id": "rap_033",
+    "category": "lyrical",
+    "title": "Зеркало",
+    "style_prompt": "Russian lyrical introspective rap, mirror-like reverb, deep boom bap drums, soul sample chops, BPM 92, self-reflection theme, honest vocals, warm analog sound",
+    "lyrics": "[Verse]\nЗеркало не врёт — я смотрю в глаза себе,\nКто я? Что я? Где я в этой суете?\nМорщины на лбу — это карта моих дней,\nКаждая — история, каждая — больней.\nЯ искал ответы в книгах и на дне стакана,\nНо правда оказалась проще, чем я думал, рана.\nОна внутри меня — всегда была и есть,\nПросто страшно было в зеркало залезть.\n\n[Chorus]\nЗеркало, зеркало — скажи мне правду,\nКто я без маски, без брони, без ладу?\nЗеркало, зеркало — я готов услышать,\nДаже если правда будет тише и тише.",
+    "track_a": "/audio/rap_033_a.mp3",
+    "track_b": "/audio/rap_033_b.mp3"
+  },
+  {
+    "id": "rap_034",
+    "category": "lyrical",
+    "title": "Корни",
+    "style_prompt": "Russian lyrical rap, organic earthy beat, acoustic bass, folk instrument samples, BPM 86, roots and heritage theme, storytelling flow, warm production, wisdom",
+    "lyrics": "[Verse]\nКорни уходят глубже, чем мы думаем,\nВ землю, где лежат те, кого мы не забудем.\nДед воевал, бабушка ждала,\nИх любовь — как дуб, что время не сломала.\nМы забываем, откуда мы пришли,\nГонимся за модой, а теряем суть земли.\nНо корни держат крепко, даже если ветер злой,\nИ дерево стоит — потому что корень свой.\n\n[Chorus]\nКорни — это то, что нас держит на земле,\nКогда штормит вокруг и мир в огне.\nКорни — это память, это кровь, это род,\nБез корней мы — лист, что ветер унесёт.",
+    "track_a": "/audio/rap_034_a.mp3",
+    "track_b": "/audio/rap_034_b.mp3"
+  },
+  {
+    "id": "rap_035",
+    "category": "lyrical",
+    "title": "Между строк",
+    "style_prompt": "Russian lyrical hip-hop, book page turning sample, intellectual beat, soft jazz drums, BPM 94, poetry slam vibe, literary references, thoughtful and measured, deep meaning",
+    "lyrics": "[Verse]\nМежду строк — там прячется истина,\nНе на поверхности, а глубже, где тишина.\nМы читаем жизнь, пролистывая быстро,\nА главные слова — мелким шрифтом, нечисто.\nЯ научился видеть то, что скрыто,\nМежду \"люблю\" и \"уходи\" — целая глыба быта.\nКаждый человек — непрочитанный роман,\nИ между строк его — целый океан.\n\n[Chorus]\nМежду строк — ищи настоящее,\nНе верь обложкам — они преходящие.\nМежду строк — там боль и красота,\nМежду строк — там жизнь, там простота.",
+    "track_a": "/audio/rap_035_a.mp3",
+    "track_b": "/audio/rap_035_b.mp3"
+  },
+  {
+    "id": "rap_036",
+    "category": "lyrical",
+    "title": "Песочные часы",
+    "style_prompt": "Russian lyrical rap, hourglass metaphor, delicate beat, fingerpicked guitar, soft brushed drums, BPM 85, mortality reflection, gentle delivery, acoustic warmth, poetic",
+    "lyrics": "[Verse]\nПесочные часы — песчинки утекают,\nКаждая — мгновение, и я их не считаю.\nСколько их осталось? Никто не даст ответ,\nНо каждая песчинка — это чей-то свет.\nМы живём, как будто времени полно,\nА оно уходит тихо, незаметно, как кино.\nВчера я был ребёнком, завтра — стариком,\nА сегодня — я стою перед пустым песком.\n\n[Chorus]\nПесочные часы — не переверну,\nЯ принимаю время, как волну.\nПесочные часы — мне хватит, что есть,\nКаждая песчинка — это моя честь.",
+    "track_a": "/audio/rap_036_a.mp3",
+    "track_b": "/audio/rap_036_b.mp3"
+  },
+  {
+    "id": "rap_037",
+    "category": "lyrical",
+    "title": "Маяк",
+    "style_prompt": "Russian lyrical rap, lighthouse metaphor, oceanic ambient sounds, boom bap drums, BPM 91, guiding light theme, hopeful undertone, deep vocal presence, cinematic depth",
+    "lyrics": "[Verse]\nМаяк горит в ночи — кому-то нужен свет,\nКогда вокруг шторма и выхода нет.\nЯ был в том море, где волны выше крыш,\nГде крик о помощи уносит ветер — тишь.\nНо маяк не гаснет — он для тех, кто ищет,\nДля тех, кто потерялся, кто давно уже не дышит.\nИ я решил стать светом для других,\nМой рэп — маяк для заблудших, для живых.\n\n[Chorus]\nМаяк горит — иди на свет,\nДаже если кажется, что надежды нет.\nМаяк горит — и я горю с ним,\nДля тех, кто в море — ты не один.",
+    "track_a": "/audio/rap_037_a.mp3",
+    "track_b": "/audio/rap_037_b.mp3"
+  },
+  {
+    "id": "rap_038",
+    "category": "lyrical",
+    "title": "Шахматы",
+    "style_prompt": "Russian lyrical rap, chess game metaphor, strategic boom bap, calculated piano notes, BPM 89, intellectual battle, chess clock ticking, cerebral flow, strategic mind",
+    "lyrics": "[Verse]\nЖизнь — шахматная доска, и каждый ход — судьба,\nОдно неверное движение — и проиграна игра.\nЯ — пешка, что мечтает стать ферзём,\nИду вперёд по клеткам, каждый день — подъём.\nПротивник жизнь — она играет чёрными,\nЕё ходы коварные, удары непокорные.\nНо я учусь на каждом проигрыше,\nИ с каждой партией становлюсь всё выше.\n\n[Chorus]\nШахматы жизни — думай на три хода,\nНе торопись — у каждой пешки есть свобода.\nШахматы жизни — мат ещё не скоро,\nИграй умно — и станешь королём без спора.",
+    "track_a": "/audio/rap_038_a.mp3",
+    "track_b": "/audio/rap_038_b.mp3"
+  },
+  {
+    "id": "rap_039",
+    "category": "lyrical",
+    "title": "Карта мира",
+    "style_prompt": "Russian lyrical rap, world music elements, didgeridoo sample, ethnic drums with boom bap, BPM 93, travel and discovery theme, worldly perspective, expansive sound",
+    "lyrics": "[Verse]\nКарта мира на стене — булавки и мечты,\nСтолько мест, где не был я, столько красоты.\nНо главное путешествие — внутрь себя,\nТам целые вселенные, там вся моя семья.\nМы ищем счастье за морями и горами,\nА оно сидит на кухне, рядом с мамой.\nКарта мира велика, но мир внутри — безбрежен,\nИ тот, кто это понял — по-настоящему успешен.\n\n[Chorus]\nКарта мира — столько дорог,\nНо самый важный путь — через свой порог.\nКарта мира — ищи не вовне,\nА в тишине, в себе, в глубине.",
+    "track_a": "/audio/rap_039_a.mp3",
+    "track_b": "/audio/rap_039_b.mp3"
+  },
+  {
+    "id": "rap_040",
+    "category": "lyrical",
+    "title": "Старая тетрадь",
+    "style_prompt": "Russian lyrical rap, nostalgic boom bap, paper rustling foley, warm vinyl crackle, mellow keys, BPM 87, childhood memories, handwritten lyrics theme, sentimental flow",
+    "lyrics": "[Verse]\nСтарая тетрадь — в ней мои первые строки,\nКривые буквы, детские уроки.\nЯ писал о том, как стану космонавтом,\nА стал рэпером — тоже неплохой расклад, нет?\nМежду страниц — засушенный листок,\nОт того дерева, где первый поцелуй — восторг.\nТетрадь хранит всё то, что я забыл,\nИ каждый раз, открыв её, я снова жил.\n\n[Chorus]\nСтарая тетрадь — машина времени,\nВ ней все мои мечты и все сомнения.\nСтарая тетрадь — я берегу тебя,\nТы — моя память, ты — моя судьба.",
+    "track_a": "/audio/rap_040_a.mp3",
+    "track_b": "/audio/rap_040_b.mp3"
+  },
+  {
+    "id": "rap_041",
+    "category": "hit",
+    "title": "Делай громче",
+    "style_prompt": "Russian pop-rap hit, catchy synth hook, bouncy 808, radio-friendly mix, BPM 130, party anthem, memorable chorus, mainstream production, bright energy, singalong vibes",
+    "lyrics": "[Verse]\nДелай громче — пусть соседи знают,\nЧто мы живём, а не просто выживаем.\nБасы качают стены и умы,\nСегодня ночь — и мы её цари.\nВсе проблемы — завтра разберём,\nА сегодня мы танцуем и поём.\nДжин-тоник в руке, улыбка на лице,\nМы на вершине — мы на высоте.\n\n[Chorus]\nДелай громче, громче, громче!\nПусть весь район услышит этой ночью!\nДелай громче — мы не спим,\nЭтот бит — непобедим!",
+    "track_a": "/audio/rap_041_a.mp3",
+    "track_b": "/audio/rap_041_b.mp3"
+  },
+  {
+    "id": "rap_042",
+    "category": "hit",
+    "title": "Лето навсегда",
+    "style_prompt": "Russian pop-rap summer hit, tropical house elements, bright chords, catchy melody, BPM 126, summer anthem, feel-good vocals, polished production, beach party mood",
+    "lyrics": "[Verse]\nЛето навсегда — я не хочу в октябрь,\nПусть солнце светит вечно, как в моём словаре.\nМы на пляже с братвой, волны бьют о берег,\nИ каждый этот день — в моей копилке вечен.\nМороженое тает, музыка играет,\nДевчонки улыбаются, и мир не угасает.\nЯ хочу остаться здесь, где тепло и свет,\nГде нет проблем и бед — только летний привет.\n\n[Chorus]\nЛето навсегда — замораживаю время,\nЛето навсегда — это моё племя.\nЛето навсегда — солнце, море, песок,\nЛето навсегда — это наш урок.",
+    "track_a": "/audio/rap_042_a.mp3",
+    "track_b": "/audio/rap_042_b.mp3"
+  },
+  {
+    "id": "rap_043",
+    "category": "hit",
+    "title": "На репите",
+    "style_prompt": "Russian pop-rap banger, addictive hook, modern trap production, catchy vocal chops, BPM 134, repeat-worthy chorus, mainstream appeal, clean mix, earworm melody",
+    "lyrics": "[Verse]\nЭтот трек на репите — не могу остановить,\nОн в голове крутится, заставляет жить.\nКаждый бар — как конфета, сладко и легко,\nЯ кидаю рифмы — улетают высоко.\nТы включаешь снова — уже десятый раз,\nИ каждый раз как первый — это наш экстаз.\nМузыка — наркотик, но легальный вид,\nМой трек на репите — он весь мир победит.\n\n[Chorus]\nНа репите, на репите — жми повтор,\nЭтот бит — мой вечный разговор.\nНа репите, на репите — снова, снова,\nКаждый раз как новый — вот такое слово.",
+    "track_a": "/audio/rap_043_a.mp3",
+    "track_b": "/audio/rap_043_b.mp3"
+  },
+  {
+    "id": "rap_044",
+    "category": "hit",
+    "title": "Миллион",
+    "style_prompt": "Russian pop-rap hit, luxurious beat, shimmering synths, punchy drums, BPM 128, success anthem, aspirational lyrics, polished pop production, stadium-ready sound",
+    "lyrics": "[Verse]\nМиллион причин, чтобы не сдаваться,\nМиллион шагов, чтобы оказаться\nТам, где мечтал, где звёзды ближе,\nГде слышат мой голос — всё выше и выше.\nЯ начинал с нуля, с пустого кармана,\nНо сердце было полным — вот моя программа.\nТеперь я здесь, и зал скандирует имя,\nМиллион мечтаний стали реальностью — с ними.\n\n[Chorus]\nМиллион, миллион — я дошёл, я смог,\nКаждый шаг — это новый виток.\nМиллион, миллион — это не про деньги,\nЭто про мечты, что сильнее лени.",
+    "track_a": "/audio/rap_044_a.mp3",
+    "track_b": "/audio/rap_044_b.mp3"
+  },
+  {
+    "id": "rap_045",
+    "category": "hit",
+    "title": "Выше облаков",
+    "style_prompt": "Russian pop-rap inspirational hit, soaring synth melody, uplifting chord progression, powerful drums, BPM 132, motivational anthem, arena sound, euphoric drop, sing-along chorus",
+    "lyrics": "[Verse]\nВыше облаков — туда, где чистый воздух,\nГде нет границ и потолков — свободный отдых.\nЯ поднимаюсь каждый день на новый уровень,\nИ с каждым треком мой полёт всё более уверен.\nМне говорили: \"Хватит, остановись\",\nА я ответил: \"Нет, я создан для высот, смирись\".\nКрылья из музыки, мотор из рифм,\nИ я лечу туда, где начинается мой гимн.\n\n[Chorus]\nВыше облаков — я не вернусь назад,\nВыше облаков — там ждёт меня закат.\nВыше облаков — летим со мной,\nВыше облаков — весь мир — наш с тобой.",
+    "track_a": "/audio/rap_045_a.mp3",
+    "track_b": "/audio/rap_045_b.mp3"
+  },
+  {
+    "id": "rap_046",
+    "category": "hit",
+    "title": "Хэй-хэй",
+    "style_prompt": "Russian pop-rap club hit, infectious chant hook, bouncy beat, festival energy, BPM 136, crowd participation anthem, bright brass stabs, party starter, maximum energy",
+    "lyrics": "[Verse]\nХэй-хэй, руки в небо подними,\nСегодня наша ночь — все звёзды для семьи.\nМы зажигаем так, что видно из космоса,\nНаш район танцует — это не вопросы, нет.\nДиджей крутит бит, а я кручу слова,\nИ каждый в этом зале — моя братва.\nНе важно кто ты — банкир или студент,\nСегодня все равны — это наш момент.\n\n[Chorus]\nХэй-хэй, хэй-хэй — давай, давай!\nВесь зал трясётся — это не рай, это кайф!\nХэй-хэй, хэй-хэй — громче, братва!\nЭтот трек — для тебя, для меня, навсегда!",
+    "track_a": "/audio/rap_046_a.mp3",
+    "track_b": "/audio/rap_046_b.mp3"
+  },
+  {
+    "id": "rap_047",
+    "category": "hit",
+    "title": "Не остановить",
+    "style_prompt": "Russian pop-rap motivational hit, driving beat, powerful bass, inspirational melody, BPM 130, unstoppable energy, anthemic chorus, radio-ready production, mass appeal",
+    "lyrics": "[Verse]\nНе остановить — я набрал разгон,\nМой поезд мчится, и в нём миллион.\nМиллион идей, миллион огней,\nИ каждый день я становлюсь сильней.\nОни кричали: \"Стой!\" — я прибавил ход,\nОни строили стены — я нашёл обход.\nМоя дорога — это мой выбор,\nИ на финише я — единственный игрок.\n\n[Chorus]\nНе остановить — я иду вперёд,\nНе остановить — каждый день — полёт.\nНе остановить — слышишь этот бит?\nОн говорит тебе: \"Вставай! Беги! Лети!\"",
+    "track_a": "/audio/rap_047_a.mp3",
+    "track_b": "/audio/rap_047_b.mp3"
+  },
+  {
+    "id": "rap_048",
+    "category": "hit",
+    "title": "Огонь и лёд",
+    "style_prompt": "Russian pop-rap hit, fire and ice contrast, dynamic production, alternating soft and hard sections, BPM 127, duality theme, catchy pop hook with rap verses, mainstream sound",
+    "lyrics": "[Verse]\nОгонь и лёд — мы с тобой как стихии,\nТо горим вместе, то замерзаем в линии.\nТы — пламя, я — метель, мы вместе — катастрофа,\nНо без тебя мой мир — пустая строфа.\nМы спорим каждый день, но миримся к утру,\nТвой поцелуй горячий — я в нём растворюсь.\nМы — противоположность, но в этом наша сила,\nОгонь и лёд — любовь нас породила.\n\n[Chorus]\nОгонь и лёд — мы не можем иначе,\nОгонь и лёд — это значит удачи.\nОгонь и лёд — вместе мы сильнее,\nОгонь и лёд — нет пары нас теплее.",
+    "track_a": "/audio/rap_048_a.mp3",
+    "track_b": "/audio/rap_048_b.mp3"
+  },
+  {
+    "id": "rap_049",
+    "category": "hit",
+    "title": "Танцпол",
+    "style_prompt": "Russian pop-rap dance hit, four-on-the-floor kick, euphoric synths, EDM influenced rap, BPM 128, dancefloor filler, laser show energy, massive buildup and drop, club banger",
+    "lyrics": "[Verse]\nТанцпол горит — мы в центре вселенной,\nБасы качают пол, а мы — нетленны.\nЗабудь про всё — сегодня только ритм,\nТвоё тело знает — этот бит неповторим.\nОгни мигают, дым машина пашет,\nИ каждый в этом зале только нашим маршем.\nДиджей на пульте — он как капитан,\nА мы — его команда, и танцпол — наш океан.\n\n[Chorus]\nТанцпол, танцпол — двигайся со мной,\nТанцпол, танцпол — мы одной волной.\nТанцпол, танцпол — до утра, до зари,\nТанцпол, танцпол — зажигай, гори!",
+    "track_a": "/audio/rap_049_a.mp3",
+    "track_b": "/audio/rap_049_b.mp3"
+  },
+  {
+    "id": "rap_050",
+    "category": "hit",
+    "title": "Звёздная ночь",
+    "style_prompt": "Russian pop-rap hit, starry night atmosphere, sparkling arpeggios, warm bass, dreamy yet catchy, BPM 124, romantic pop-rap crossover, memorable melody, radio hit potential",
+    "lyrics": "[Verse]\nЗвёздная ночь — ты и я на крыше,\nВесь город внизу, а мы — всех выше.\nТвои глаза блестят ярче любых созвездий,\nИ я хочу быть рядом — это мой заезд, мой.\nМы считаем звёзды, загадываем желания,\nИ каждое сбывается — без ожидания.\nЭта ночь волшебная, как в кино каком-то,\nНо это реальность — и она прекрасна, точно.\n\n[Chorus]\nЗвёздная ночь — танцуем под луной,\nЗвёздная ночь — ты навсегда со мной.\nЗвёздная ночь — загадай мечту,\nЗвёздная ночь — я её найду.",
+    "track_a": "/audio/rap_050_a.mp3",
+    "track_b": "/audio/rap_050_b.mp3"
+  }
+]

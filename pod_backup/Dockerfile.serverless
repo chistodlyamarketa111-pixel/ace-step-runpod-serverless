@@ -1,0 +1,32 @@
+FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
+
+WORKDIR /workspace
+
+RUN pip install --no-cache-dir \
+    transformers==5.3.0 \
+    peft==0.18.1 \
+    diffusers==0.32.2 \
+    safetensors==0.7.0 \
+    accelerate==1.13.0 \
+    pedalboard==0.9.22 \
+    pyloudnorm==0.2.0 \
+    soundfile==0.13.1 \
+    loguru==0.7.3 \
+    soxr==1.0.0 \
+    huggingface_hub \
+    runpod
+
+RUN python3 -c "\
+from huggingface_hub import snapshot_download; \
+snapshot_download('ACE-Step/acestep-v15-base', local_dir='/workspace/ace-step-v15-checkpoint/acestep-v15-base'); \
+snapshot_download('ACE-Step/ACE-Step-v1-3.5B', local_dir='/tmp/ace_full', allow_patterns='vae/*'); \
+import shutil; shutil.move('/tmp/ace_full/vae', '/workspace/ace-step-v15-checkpoint/vae'); shutil.rmtree('/tmp/ace_full', ignore_errors=True); \
+snapshot_download('Qwen/Qwen3-Embedding-0.6B', local_dir='/workspace/ace-step-v15-checkpoint/Qwen3-Embedding-0.6B')"
+
+RUN sed -i 's/mask_cat\.argsort(/mask_cat.int().argsort(/' \
+    /workspace/ace-step-v15-checkpoint/acestep-v15-base/modeling_acestep_v15_base.py
+
+COPY lora_fixed_base/ /workspace/lora_fixed_base/
+COPY scripts/handler.py /workspace/handler.py
+
+CMD ["python3", "/workspace/handler.py"]
