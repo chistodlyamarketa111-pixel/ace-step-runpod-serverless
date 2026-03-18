@@ -74,7 +74,7 @@ def master_audio(audio_np, sr, target_lufs=-14.0):
         PeakFilter(cutoff_frequency_hz=3000.0, gain_db=1.5, q=0.7),
         PeakFilter(cutoff_frequency_hz=5000.0, gain_db=1.0, q=0.8),
         HighShelfFilter(cutoff_frequency_hz=10000.0, gain_db=2.5),
-        LowPassFilter(cutoff_frequency_hz=20000.0),
+        LowpassFilter(cutoff_frequency_hz=20000.0),
     ])
     audio_t = eq_board(audio_t, sr)
     comp_board = Pedalboard([
