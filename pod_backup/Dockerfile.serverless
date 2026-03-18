@@ -1,6 +1,9 @@
-FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
+FROM runpod/base:0.7.2-dev-cuda12.4.1-ubuntu2204
 
 WORKDIR /workspace
+
+RUN pip install --no-cache-dir \
+    torch==2.4.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu124
 
 RUN pip install --no-cache-dir \
     transformers==5.3.0 \
