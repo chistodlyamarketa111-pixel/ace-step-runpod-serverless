@@ -16,30 +16,6 @@ RUN pip install --no-cache-dir \
     huggingface_hub \
     runpod
 
-RUN python3 -c "\
-from huggingface_hub import snapshot_download; \
-snapshot_download('ACE-Step/acestep-v15-base', local_dir='/workspace/ace-step-v15-checkpoint/acestep-v15-base')"
-
-RUN python3 -c "\
-from huggingface_hub import snapshot_download; \
-snapshot_download('ACE-Step/ACE-Step-v1-3.5B', local_dir='/workspace/ace-step-v15-checkpoint', allow_patterns='vae/*')"
-
-RUN python3 -c "\
-from huggingface_hub import snapshot_download; \
-snapshot_download('Qwen/Qwen3-Embedding-0.6B', local_dir='/workspace/ace-step-v15-checkpoint/Qwen3-Embedding-0.6B')"
-
-RUN python3 -c "\
-from huggingface_hub import snapshot_download; \
-snapshot_download('ruslanmusinrusmus/macan-lora-v5-acestep-v15', local_dir='/workspace/macan_lora', allow_patterns='lora_fixed_base/*'); \
-import shutil, os; \
-src = '/workspace/macan_lora/lora_fixed_base'; \
-dst = '/workspace/lora_fixed_base'; \
-shutil.copytree(src, dst); \
-shutil.rmtree('/workspace/macan_lora', ignore_errors=True)"
-
-RUN sed -i 's/mask_cat\.argsort(/mask_cat.int().argsort(/' \
-    /workspace/ace-step-v15-checkpoint/acestep-v15-base/modeling_acestep_v15_base.py
-
 RUN apt-get update -qq && apt-get install -y -qq ffmpeg && rm -rf /var/lib/apt/lists/*
 
 COPY scripts/handler.py /workspace/handler.py

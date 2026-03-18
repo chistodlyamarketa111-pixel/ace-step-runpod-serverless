@@ -2,15 +2,16 @@ import numpy as np
 np.float = np.float64
 np.int = np.int64
 
-import torch, os, sys, time, json, io, base64, gc
+import torch, os, sys, time, json, io, base64, gc, shutil
 import soundfile as sf
 from safetensors.torch import load_file, save_file
 from loguru import logger
 import pyloudnorm as pyln
 from pedalboard import Pedalboard, Compressor, Gain, LowShelfFilter, HighShelfFilter, PeakFilter, Limiter, HighpassFilter, LowpassFilter
 
-BASE_DIR = '/workspace/ace-step-v15-checkpoint/acestep-v15-base'
-sys.path.insert(0, BASE_DIR)
+CHECKPOINT_DIR = '/workspace/ace-step-v15-checkpoint'
+BASE_DIR = os.path.join(CHECKPOINT_DIR, 'acestep-v15-base')
+LORA_DIR = '/workspace/lora_fixed_base'
 
 DEVICE = 'cuda'
 DTYPE = torch.bfloat16
@@ -22,6 +23,46 @@ VAE = None
 TOKENIZER = None
 TEXT_ENC = None
 SILENCE_LATENT = None
+
+
+def download_models():
+    from huggingface_hub import snapshot_download
+
+    if not os.path.exists(os.path.join(BASE_DIR, 'model.safetensors')):
+        logger.info("Downloading ACE-Step v1.5 BASE...")
+        snapshot_download('ACE-Step/acestep-v15-base', local_dir=BASE_DIR)
+
+        sed_target = os.path.join(BASE_DIR, 'modeling_acestep_v15_base.py')
+        if os.path.exists(sed_target):
+            with open(sed_target, 'r') as f:
+                code = f.read()
+            code = code.replace('mask_cat.argsort(', 'mask_cat.int().argsort(')
+            with open(sed_target, 'w') as f:
+                f.write(code)
+            logger.info("Patched bool sort CUDA bug")
+
+    vae_dir = os.path.join(CHECKPOINT_DIR, 'vae')
+    if not os.path.exists(vae_dir):
+        logger.info("Downloading VAE...")
+        snapshot_download('ACE-Step/ACE-Step-v1-3.5B', local_dir=CHECKPOINT_DIR, allow_patterns='vae/*')
+
+    qwen_dir = os.path.join(CHECKPOINT_DIR, 'Qwen3-Embedding-0.6B')
+    if not os.path.exists(qwen_dir):
+        logger.info("Downloading Qwen3-Embedding-0.6B...")
+        snapshot_download('Qwen/Qwen3-Embedding-0.6B', local_dir=qwen_dir)
+
+    if not os.path.exists(os.path.join(LORA_DIR, 'adapter_model.safetensors')):
+        logger.info("Downloading MACAN LoRA v5...")
+        tmp = '/tmp/macan_lora'
+        snapshot_download('ruslanmusinrusmus/macan-lora-v5-acestep-v15', local_dir=tmp, allow_patterns='lora_fixed_base/*')
+        src = os.path.join(tmp, 'lora_fixed_base')
+        if os.path.exists(LORA_DIR):
+            shutil.rmtree(LORA_DIR)
+        shutil.copytree(src, LORA_DIR)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    logger.info("All models downloaded")
+
 
 def master_audio(audio_np, sr, target_lufs=-14.0):
     audio_t = audio_np.astype(np.float32)
@@ -59,18 +100,23 @@ def master_audio(audio_np, sr, target_lufs=-14.0):
         audio_out = audio_out * (0.99 / peak)
     return audio_out
 
+
 def load_models():
     global MODEL, VAE, TOKENIZER, TEXT_ENC, SILENCE_LATENT
+
+    download_models()
+
+    sys.path.insert(0, BASE_DIR)
     from transformers import AutoTokenizer, AutoModel
     from peft import PeftModel
     from diffusers.models import AutoencoderOobleck
     from configuration_acestep_v15 import AceStepConfig
     from modeling_acestep_v15_base import AceStepConditionGenerationModel
 
-    logger.info("Loading models...")
-    VAE = AutoencoderOobleck.from_pretrained('/workspace/ace-step-v15-checkpoint/vae').to(DEVICE, dtype=torch.float32)
+    logger.info("Loading models into GPU...")
+    VAE = AutoencoderOobleck.from_pretrained(os.path.join(CHECKPOINT_DIR, 'vae')).to(DEVICE, dtype=torch.float32)
     VAE.eval()
-    qwen_path = '/workspace/ace-step-v15-checkpoint/Qwen3-Embedding-0.6B'
+    qwen_path = os.path.join(CHECKPOINT_DIR, 'Qwen3-Embedding-0.6B')
     TOKENIZER = AutoTokenizer.from_pretrained(qwen_path)
     TEXT_ENC = AutoModel.from_pretrained(qwen_path, trust_remote_code=True, torch_dtype=DTYPE).to(DEVICE)
     TEXT_ENC.eval()
@@ -82,9 +128,10 @@ def load_models():
     MODEL.eval()
     SILENCE_LATENT = torch.load(os.path.join(BASE_DIR, 'silence_latent.pt'), weights_only=True).transpose(1, 2).to(DEVICE, dtype=DTYPE).detach()
 
-    MODEL.decoder = PeftModel.from_pretrained(MODEL.decoder, '/workspace/lora_fixed_base', is_trainable=False).to(DEVICE, dtype=DTYPE)
+    MODEL.decoder = PeftModel.from_pretrained(MODEL.decoder, LORA_DIR, is_trainable=False).to(DEVICE, dtype=DTYPE)
     MODEL.decoder.eval()
     logger.info(f"Models loaded. GPU: {torch.cuda.memory_allocated()/1e9:.1f}GB")
+
 
 def generate(job):
     if MODEL is None:
