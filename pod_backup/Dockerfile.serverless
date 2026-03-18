@@ -1,6 +1,9 @@
-FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
+FROM runpod/base:0.6.2-cuda12.2.0
 
 WORKDIR /workspace
+
+RUN pip install --no-cache-dir \
+    torch==2.4.1 --index-url https://download.pytorch.org/whl/cu124
 
 RUN pip install --no-cache-dir \
     transformers==5.3.0 \
@@ -16,7 +19,7 @@ RUN pip install --no-cache-dir \
     huggingface_hub \
     runpod
 
-RUN apt-get update -qq && apt-get install -y -qq ffmpeg && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -qq && apt-get install -y -qq ffmpeg libsndfile1 && rm -rf /var/lib/apt/lists/*
 
 COPY scripts/handler.py /workspace/handler.py
 
