@@ -134,8 +134,14 @@ def load_models():
 
 
 def generate(job):
-    if MODEL is None:
-        load_models()
+    try:
+        if MODEL is None:
+            load_models()
+    except Exception as e:
+        import traceback
+        error_msg = f"Model loading failed: {str(e)}\n{traceback.format_exc()}"
+        logger.error(error_msg)
+        return {"error": error_msg}
 
     inp = job.get("input", {})
     caption = inp.get("caption", "voice_macan, Russian hip-hop/rap track with emotional male vocals, atmospheric synthesizer pads, deep 808 bass, crisp hi-hats, mid-tempo trap beat 85 BPM minor key")
