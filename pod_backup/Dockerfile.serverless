@@ -21,12 +21,15 @@ from huggingface_hub import snapshot_download; \
 snapshot_download('ACE-Step/acestep-v15-base', local_dir='/workspace/ace-step-v15-checkpoint/acestep-v15-base'); \
 snapshot_download('ACE-Step/ACE-Step-v1-3.5B', local_dir='/tmp/ace_full', allow_patterns='vae/*'); \
 import shutil; shutil.move('/tmp/ace_full/vae', '/workspace/ace-step-v15-checkpoint/vae'); shutil.rmtree('/tmp/ace_full', ignore_errors=True); \
-snapshot_download('Qwen/Qwen3-Embedding-0.6B', local_dir='/workspace/ace-step-v15-checkpoint/Qwen3-Embedding-0.6B')"
+snapshot_download('Qwen/Qwen3-Embedding-0.6B', local_dir='/workspace/ace-step-v15-checkpoint/Qwen3-Embedding-0.6B'); \
+snapshot_download('ruslanmusinrusmus/macan-lora-v5-acestep-v15', local_dir='/tmp/macan_lora', allow_patterns='lora_fixed_base/*'); \
+shutil.copytree('/tmp/macan_lora/lora_fixed_base', '/workspace/lora_fixed_base'); shutil.rmtree('/tmp/macan_lora', ignore_errors=True)"
 
 RUN sed -i 's/mask_cat\.argsort(/mask_cat.int().argsort(/' \
     /workspace/ace-step-v15-checkpoint/acestep-v15-base/modeling_acestep_v15_base.py
 
-COPY lora_fixed_base/ /workspace/lora_fixed_base/
+RUN apt-get update -qq && apt-get install -y -qq ffmpeg && rm -rf /var/lib/apt/lists/*
+
 COPY scripts/handler.py /workspace/handler.py
 
 CMD ["python3", "/workspace/handler.py"]
